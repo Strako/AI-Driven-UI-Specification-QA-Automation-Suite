@@ -1,0 +1,48 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - link "DaCodes DaCodes ATS AI" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - img "DaCodes" [ref=e7]
+          - generic [ref=e8]: DaCodes ATS AI
+        - navigation [ref=e9]:
+          - link "Vacantes" [ref=e10] [cursor=pointer]:
+            - /url: "#vacantes"
+        - generic [ref=e11]:
+          - button [ref=e12] [cursor=pointer]:
+            - img
+          - button [ref=e13] [cursor=pointer]:
+            - img
+          - link "Iniciar sesión" [ref=e14] [cursor=pointer]:
+            - /url: /login
+            - img
+            - text: Iniciar sesión
+    - main [ref=e15]:
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - img [ref=e19]
+          - text: Impulsado por IA
+        - heading "Encuentra tu próximo reto tecnológico" [level=1] [ref=e21]
+        - paragraph [ref=e22]: Conectamos talento excepcional con las empresas más innovadoras de Latinoamérica. Postúlate hoy y deja que nuestra IA encuentre tu match perfecto.
+        - link "Ver vacantes disponibles" [ref=e23] [cursor=pointer]:
+          - /url: "#vacantes"
+          - text: Ver vacantes disponibles
+          - img
+      - generic [ref=e25]:
+        - heading "Vacantes disponibles" [level=2] [ref=e26]
+        - generic [ref=e27]:
+          - img [ref=e28]
+          - textbox "Buscar vacantes..." [ref=e31]
+    - contentinfo [ref=e34]:
+      - generic [ref=e35]:
+        - generic [ref=e36]:
+          - img "DaCodes" [ref=e37]
+          - generic [ref=e38]: DaCodes ATS AI
+        - paragraph [ref=e39]:
+          - img [ref=e40]
+          - text: Impulsado por agentes IA 24/7
+        - paragraph [ref=e42]: © 2026 DaCodes. Todos los derechos reservados.

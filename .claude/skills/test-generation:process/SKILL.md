@@ -1,0 +1,123 @@
+# Skill: test-generation:process
+
+## Test Case Generation
+
+You are acting as a QA engineer. Generate a complete set of test cases from the UI screen specification the user has provided or that was indicated via the `SPEC_FILE` input.
+
+---
+
+### Step 1 — Read required files
+
+Before generating anything, read the following files in order:
+
+1. The UI screen specification file indicated by `SPEC_FILE` (or the file the user referenced).
+2. Every spec file listed under **Related Views → Spec File** in that specification. Read each one fully to understand its view ID, components, fields, validations, and flow.
+3. `vars.md` at the project root (resolved from `PROJECT_ROOT` if provided, or by searching for it via Glob). Extract the `BASE_URL` value — this is the domain prepended to every route when constructing full URLs in preconditions and navigation steps.
+
+---
+
+### Step 2 — Apply the specification conventions
+
+All output must follow the conventions defined in `TEMPLATE.md`. Apply them exactly.
+
+**Field references**
+- Reference every field, input, button, link, or interactive element using its `${field-name}` placeholder as defined in the spec.
+- Never substitute `${field-name}` with a concrete value inside test cases.
+- When a field belongs to a related view (not the current one), prefix it with its source view ID: `<<view-id>>.${field-name}`.
+
+**View references**
+- Reference every view using its `<<view-id>>` identifier as defined in the spec.
+
+**Full URL construction**
+- Construct full URLs in preconditions and navigation steps as: `BASE_URL` + `Route` from the spec.
+- Example: `BASE_URL=https://app.example.com` + `/login` → `https://app.example.com/login`.
+
+---
+
+### Step 3 — Determine coverage
+
+Generate the optimal number of test cases for complete behavioral coverage. Do not use a fixed count per category — let the complexity of the spec determine it. Do not assume or invent behavior not explicitly described in the spec.
+
+Cover every applicable test type:
+
+- **Happy Path** — the main successful flow from entry to final state
+- **Smoke** — minimum critical checks that confirm the view is functional
+- **Functional** — detailed validation of each component, field rule, state transition, business rule, and action in the spec
+- **Edge Case** — boundary conditions, empty states, max/min values, and unusual but valid interactions
+- **Exploratory** — scenarios implied by the spec holistically that are not explicitly listed but follow logically from the described behavior
+
+Specifically ensure coverage of:
+- Every field validation inside every component
+- Every component-level validation
+- Every validation defined on view-level fields
+- Every named screen state and its transition conditions
+- Every business rule — both the met path and the violated path
+- Every action and its expected reaction
+- Every cross-view scenario from the **Related Views** section — each cross-view test must be fully self-contained, starting with the setup steps in the related view and ending with the assertion in the current view
+- For **External Service** entries: do not test the service directly; generate a test case that stubs or mocks it and asserts the expected behavior of the current view
+
+---
+
+### Step 4 — Produce Artifact 1: test-cases.md
+
+Write a file named `test-cases.md` in the same directory as the spec file, using the structure below. Each test case must reference fields and views using placeholders only — never concrete values.
+
+```
+# Test Cases — <<view-id>>
+
+## [TC-001] (Title)
+
+- **Type**: Happy Path | Smoke | Functional | Edge Case | Exploratory
+- **Description**: (One sentence describing what this test validates)
+- **Preconditions**: (Required state, session, data, or navigation before the test begins. Use <<view-id>> for views and ${field-name} for field values. Include the full URL when navigation is required. Omit this block if there are no preconditions.)
+- **Steps**:
+  1. (Action — use ${field-name} for every interaction, <<view-id>> for every navigation)
+  2. (...)
+- **Expected Result**: (What the system must do or display)
+```
+
+Repeat the block for each test case.
+
+---
+
+### Step 5 — Produce Artifact 2: test-data.md
+
+After writing `test-cases.md`, write a second file named `test-data.md` in the same directory. This is a standalone fillable document — it contains only data, never test logic.
+
+Rules:
+- Organize by scenario using the same TC IDs and titles from Artifact 1.
+- Under each scenario, group fields by their source view using `<<view-id>>` as a section header.
+- List every `${field-name}` referenced in the test case under the correct view section, with an empty fill-in slot.
+- Preserve the exact `${field-name}` identifiers from the spec — do not rename or alias them.
+- Include only test cases that require input data; omit test cases with no field interactions.
+
+```
+# Test Data — <<view-id>>
+
+## [TC-001] (Title)
+
+### <<view-id>>
+- ${field-name}: 
+- ${field-name}: 
+
+### <<related-view-id>>
+- ${field-name}: 
+- ${field-name}: 
+
+## [TC-002] (Title)
+
+### <<view-id>>
+- ${field-name}: 
+```
+
+Repeat for each test case that requires input data.
+
+---
+
+### Step 6 — Report completion
+
+Once both files are written, output the structured `---GENERATION-COMPLETE---` block as defined in the agent instructions, then provide a human-readable summary:
+- Path to `test-cases.md` and total number of test cases generated, broken down by type.
+- Path to `test-data.md` and total number of scenarios included.
+- Any related view spec files that were read and incorporated into cross-view test cases.
+- Any assumptions made due to ambiguity in the spec (if any).

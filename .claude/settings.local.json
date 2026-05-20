@@ -1,0 +1,50 @@
+{
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x:*)",
+      "Bash(npx --version)",
+      "mcp__playwright_*",
+      "mcp__playwright_headed__*",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch:*)",
+      "Bash(git stash:*)",
+      "Bash(git push:*)",
+      "Bash(git remote:*)",
+      "Bash(git pull:*)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "playwright_headed"
+  ],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/macbookpro/Documents/Projects/Talent-Ai/.claude/hooks/pipeline-on-spec-created.sh"
+          },
+          {
+            "type": "command",
+            "command": "/Users/macbookpro/Documents/Projects/Talent-Ai/.claude/hooks/pipeline-on-tests-generated.sh"
+          },
+          {
+            "type": "command",
+            "command": "/Users/macbookpro/Documents/Projects/Talent-Ai/.claude/hooks/pipeline-on-report-written.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/macbookpro/Documents/Projects/Talent-Ai/.claude/hooks/pipeline-on-user-prompt.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
