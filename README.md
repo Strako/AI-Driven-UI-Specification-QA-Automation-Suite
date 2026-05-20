@@ -6,6 +6,125 @@ A Claude-native agent system for end-to-end UI test automation. From a live page
 
 ---
 
+## Requirements & Installation
+
+### Prerequisites
+
+| Dependency                                                        | Minimum Version | Purpose                                            |
+| ----------------------------------------------------------------- | --------------- | -------------------------------------------------- |
+| [Node.js](https://nodejs.org/)                                    | v18+            | Runtime for `npx` and Playwright MCP server        |
+| [npm](https://www.npmjs.com/)                                     | v9+             | Package manager (ships with Node.js)               |
+| [Python 3](https://www.python.org/)                               | v3.8+           | Used by pipeline hooks for JSON parsing            |
+| [Google Chrome](https://www.google.com/chrome/)                   | Latest stable   | Browser used by Playwright MCP in headed mode      |
+| [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) | Latest          | Agent runtime that executes the multi-agent system |
+| Git                                                               | v2.30+          | Version control                                    |
+
+### System Requirements
+
+- **OS:** macOS, Linux, or Windows (WSL recommended on Windows)
+- **RAM:** 4 GB minimum (8 GB recommended — Chrome + Claude Code run concurrently)
+- **Disk:** ~500 MB for Chrome + Node.js dependencies
+
+### Installation
+
+#### 1. Install Node.js (if not already installed)
+
+```bash
+# macOS (Homebrew)
+brew install node
+
+# Ubuntu / Debian
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Or download from https://nodejs.org/
+```
+
+Verify:
+
+```bash
+node --version   # v18.x or higher
+npx --version    # v9.x or higher
+```
+
+#### 2. Install Python 3 (if not already installed)
+
+```bash
+# macOS (Homebrew)
+brew install python3
+
+# Ubuntu / Debian
+sudo apt-get install python3
+```
+
+Verify:
+
+```bash
+python3 --version   # 3.8 or higher
+```
+
+#### 3. Install Google Chrome
+
+Download from [google.com/chrome](https://www.google.com/chrome/) or:
+
+```bash
+# macOS (Homebrew)
+brew install --cask google-chrome
+```
+
+#### 4. Install Claude Code CLI
+
+Follow the official installation guide at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-code).
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+#### 5. Clone the repository
+
+```bash
+git clone https://github.com/<your-org>/AI-Driven-UI-Specification-QA-Automation-Suite.git
+cd AI-Driven-UI-Specification-QA-Automation-Suite
+```
+
+#### 6. Verify Playwright MCP server
+
+The project uses `@playwright/mcp` via `npx` (no local install needed). Verify it can resolve:
+
+```bash
+npx -y @playwright/mcp@latest --help
+```
+
+This downloads the Playwright MCP server on first run. Subsequent runs use the cached version.
+
+#### 7. Configure your target URL
+
+Edit `vars.md` at the project root:
+
+```
+BASE_URL = https://your-app-domain.com
+```
+
+#### 8. Make hook scripts executable
+
+```bash
+chmod +x .claude/hooks/*.sh
+```
+
+### No `npm install` Required
+
+This project has **no `package.json` or `node_modules`**. All browser automation runs through the Playwright MCP server invoked via `npx` at runtime. There are no test scripts to install or build steps to run.
+
+### Quick Verification
+
+Run this to confirm everything is ready:
+
+```bash
+node --version && python3 --version && npx --version && echo "✅ All dependencies available"
+```
+
+---
+
 ## How It Works
 
 The system uses seven Claude agents organized into three stages: spec creation, test generation, and test execution. A pipeline state machine and shell hooks coordinate transitions between stages automatically.
