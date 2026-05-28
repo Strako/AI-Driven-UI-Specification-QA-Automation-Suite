@@ -60,6 +60,7 @@ ${field-name}
   > The full URL is resolved by combining `BASE_URL` from `vars.md` (project root) with this route.
   > Never define the domain or protocol here — only the path.
   > Example: `BASE_URL=https://app.example.com` + `/login` → `https://app.example.com/login`
+- **Pencil slide name / Figma frame URL**: (Name of the pencil slide or Figma Frame URL containing the design)
 
 ---
 
@@ -291,3 +292,87 @@ After generating all test cases, always produce a separate **Test Data Template*
 ### Rule 5 — Keep Test Cases and Test Data Independent
 
 Test cases reference `${field-name}` placeholders. The test data template provides the concrete values that replace those placeholders at execution time. These two artifacts must never be merged. The user fills the test data template before running the tests — the test cases themselves never change.
+
+---
+
+### Rule 6 — Design Comparison Test Case (When Design Reference Is Provided)
+
+When the **Pencil slide name / Figma frame URL** field in **Screen Identification** contains a value (not empty, not "N/A", not "Not provided"), you **MUST** generate an additional test case of type **Design Comparison**.
+
+This test case compares the live web page against the original design (from Figma or Pencil) to identify visual and structural discrepancies.
+
+**How to retrieve the design:**
+
+- If the value is a **Figma frame URL** (contains `figma.com`): use the **Figma MCP** tools to fetch the design frame, extract its visual structure, components, layout, colors, typography, spacing, and hierarchy.
+- If the value is a **Pencil slide name** (does not contain `figma.com`): use the **Pencil MCP** tools to read the `.pen` file, locate the slide/frame by name, and extract its visual structure, components, layout, colors, typography, spacing, and hierarchy.
+
+**Design Comparison test case format:**
+
+```
+## [TC-DC-01] Comparación de diseño vs implementación
+
+- **Type**: Design Comparison
+- **Description**: Compara la implementación actual de la página web contra el diseño original para identificar discrepancias visuales y estructurales.
+- **Design Reference**: {Pencil slide name or Figma frame URL from Screen Identification}
+- **Preconditions**: La página está cargada en `BASE_URL + route` y el diseño de referencia es accesible.
+- **Steps**:
+  1. Navegar a `BASE_URL + route`
+  2. Capturar screenshot completo de la página actual
+  3. Obtener el diseño de referencia usando Figma MCP o Pencil MCP según corresponda
+  4. Comparar estructura de componentes (presencia, orden, jerarquía)
+  5. Comparar tipografía (fuentes, tamaños, pesos, colores de texto)
+  6. Comparar colores (fondos, bordes, acentos)
+  7. Comparar espaciado y layout (márgenes, paddings, alineación, distribución)
+  8. Comparar elementos interactivos (botones, inputs, links — forma, tamaño, estado)
+  9. Comparar imágenes e iconos (presencia, tamaño, posición)
+  10. Documentar todas las discrepancias encontradas
+- **Expected Result**: Se genera un reporte detallado de discrepancias entre el diseño y la implementación, clasificando cada diferencia por severidad (crítica, mayor, menor, cosmética).
+```
+
+**Design Comparison report section in the execution report:**
+
+After executing this test case, the report must include a dedicated section:
+
+```markdown
+## DESIGN COMPARISON
+
+### Referencia de Diseño
+
+- **Fuente**: {Figma frame URL or Pencil slide name}
+- **Fecha de comparación**: {YYYY-MM-DD}
+
+### Resumen de Discrepancias
+
+| Categoría           | Discrepancias | Severidad Crítica | Severidad Mayor | Severidad Menor | Cosmética |
+| ------------------- | ------------- | ----------------- | --------------- | --------------- | --------- |
+| Estructura / Layout | N             | N                 | N               | N               | N         |
+| Tipografía          | N             | N                 | N               | N               | N         |
+| Colores             | N             | N                 | N               | N               | N         |
+| Espaciado           | N             | N                 | N               | N               | N         |
+| Componentes         | N             | N                 | N               | N               | N         |
+| Imágenes / Iconos   | N             | N                 | N               | N               | N         |
+| **TOTAL**           | **N**         | **N**             | **N**           | **N**           | **N**     |
+
+### Detalle de Discrepancias
+
+#### {Categoría} — {Elemento afectado}
+
+- **Severidad**: Crítica | Mayor | Menor | Cosmética
+- **En el diseño**: {descripción de cómo se ve en el diseño}
+- **En la implementación**: {descripción de cómo se ve en la web}
+- **Componente afectado**: `<<component-id>>` o elemento específico
+- **Evidencia**: {screenshot filename}
+
+(Repetir para cada discrepancia encontrada)
+```
+
+**Severity classification:**
+
+| Severidad     | Criterio                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| **Crítica**   | El componente no existe, está completamente roto, o es funcionalmente diferente al diseño |
+| **Mayor**     | Diferencias significativas en layout, tamaño, o posición que afectan la usabilidad        |
+| **Menor**     | Diferencias en colores, tipografía, o espaciado que no afectan la funcionalidad           |
+| **Cosmética** | Diferencias mínimas apenas perceptibles (1-2px, tonos muy similares)                      |
+
+> If the **Pencil slide name / Figma frame URL** field is empty, "N/A", or "Not provided", do NOT generate the Design Comparison test case.

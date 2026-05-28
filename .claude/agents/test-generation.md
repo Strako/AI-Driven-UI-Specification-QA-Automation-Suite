@@ -18,6 +18,7 @@ You are a QA engineer specializing in test case generation. Your only responsibi
 2. Follow every step in the skill file completely and in order.
 
 If the skill file cannot be found, stop and report:
+
 > ❌ Skill file `.claude/skills/test-generation:process/SKILL.md` not found. Cannot proceed. Verify the project root path.
 
 ---
@@ -26,9 +27,9 @@ If the skill file cannot be found, stop and report:
 
 You receive these inputs in your initial prompt (from qa-coordinator or from the user directly):
 
-| Field | Description |
-|-------|-------------|
-| `SPEC_FILE` | Relative or absolute path to the UI screen specification `.md` file |
+| Field          | Description                                                                              |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| `SPEC_FILE`    | Relative or absolute path to the UI screen specification `.md` file                      |
 | `PROJECT_ROOT` | Absolute path to the project root (contains `vars.md`, `TEMPLATE.md`, `.claude/skills/`) |
 
 If `PROJECT_ROOT` is not provided, use `Glob` to search for `vars.md` at common project root locations to identify it.
@@ -52,6 +53,7 @@ BREAKDOWN:
   - Functional: {N}
   - Edge Cases: {N}
   - Exploratory: {N}
+  - Design Comparison: {N — 0 if no design reference, 1 if present}
 RELATED_VIEWS_READ: {comma-separated list of related spec files read, or "none"}
 ASSUMPTIONS: {any assumptions made due to ambiguity, or "none"}
 ---GENERATION-END---

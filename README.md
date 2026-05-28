@@ -103,7 +103,23 @@ Edit `vars.md` at the project root:
 
 ```
 BASE_URL = https://your-app-domain.com
+AUTH_EMAIL = your-login-email@example.com
+AUTH_PASSWORD = your-login-password
 ```
+
+`BASE_URL` is required. Authentication variables are optional — add them only if your pages require login. You can use any variable names you want (e.g. `ADMIN_EMAIL`, `USER_PASSWORD`, etc.) and reference them by name when invoking the agent.
+
+#### 7b. Configure Figma access (optional — for design comparison)
+
+If you plan to use Figma frame URLs for design comparison, set your Figma personal access token:
+
+```bash
+export FIGMA_ACCESS_TOKEN=your-figma-token-here
+```
+
+Generate a token from: Figma → Settings → Personal access tokens.
+
+> This is only needed if you provide Figma URLs as design references. Pencil MCP (for `.pen` files) requires no additional configuration.
 
 #### 8. Make hook scripts executable
 
@@ -232,16 +248,17 @@ After saving, offers two paths:
 - **Yes** → launches `spec-wizard-improve` for interactive refinement
 - **No** → launches `spec-wizard-pipeline` to offer the QA pipeline
 
-| Input               | Required | Description                                          |
-| ------------------- | -------- | ---------------------------------------------------- |
-| `PAGE_URL`          | Yes      | Full URL or path to analyze                          |
-| `MODULE_NAME`       | No       | Kebab-case name (derived from URL if omitted)        |
-| `AUTH_REQUIRED`     | No       | Whether the page needs login first                   |
-| `LOGIN_ROUTE`       | If auth  | Route or URL of the login page                       |
-| `AUTH_EMAIL`        | If auth  | Login email or username                              |
-| `AUTH_PASSWORD`     | If auth  | Login password                                       |
-| `DESTINATION_ROUTE` | If auth  | Page to analyze after login                          |
-| `OUTPUT_DIR`        | No       | Output directory (default: `Platform/{ModuleName}/`) |
+| Input               | Required | Description                                                                                                                                     |
+| ------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PAGE_URL`          | Yes      | Full URL or path to analyze                                                                                                                     |
+| `MODULE_NAME`       | No       | Kebab-case name (derived from URL if omitted)                                                                                                   |
+| `AUTH_REQUIRED`     | No       | Whether the page needs login first                                                                                                              |
+| `LOGIN_ROUTE`       | If auth  | Route or URL of the login page                                                                                                                  |
+| `AUTH_EMAIL_VAR`    | If auth  | Variable name in `vars.md` for login email/username (e.g. `AUTH_EMAIL`). Credentials are never hardcoded — always read from `vars.md`.          |
+| `AUTH_PASSWORD_VAR` | If auth  | Variable name in `vars.md` for login password (e.g. `AUTH_PASSWORD`). Credentials are never hardcoded — always read from `vars.md`.             |
+| `DESTINATION_ROUTE` | If auth  | Page to analyze after login                                                                                                                     |
+| `OUTPUT_DIR`        | No       | Output directory (default: `Platform/{ModuleName}/`)                                                                                            |
+| `DESIGN_REFERENCE`  | No       | Pencil slide name or Figma frame URL for design comparison. Populates the "Pencil slide name / Figma frame URL" field in Screen Identification. |
 
 **Output:** `Platform/{ModuleName}/{module}-description.md`
 
@@ -320,21 +337,21 @@ Reads a spec file and produces two artifacts:
 - `test-cases.md` — complete, data-agnostic test cases using `${field-name}` placeholders
 - `test-data.md` — fillable template with empty slots organized by scenario
 
-**Coverage types:** Happy Path · Smoke · Functional · Edge Cases · Exploratory
+**Coverage types:** Happy Path · Smoke · Functional · Edge Cases · Exploratory · Design Comparison (when design reference is provided)
 
 ---
 
 ### `test-execution` — Browser Test Executor
 
-> **Model:** Sonnet · **Skill:** `test-execution:process` · **MCP:** `playwright_headed`
+> **Model:** Sonnet · **Skill:** `test-execution:process` · **MCP:** `playwright_headed`, `figma`, `pencil`
 
-Reads `test-cases.md` and `test-data.md`, hydrates placeholders with concrete values, executes every test sequentially via Playwright MCP, captures screenshots, and generates a structured report in technical Spanish.
+Reads `test-cases.md` and `test-data.md`, hydrates placeholders with concrete values, executes every test sequentially via Playwright MCP, captures screenshots, and generates a structured report in technical English. For Design Comparison test cases, retrieves the original design from Figma MCP or Pencil MCP and compares it against the live implementation, documenting all visual and structural discrepancies.
 
-| Status       | Condition                                                 |
-| ------------ | --------------------------------------------------------- |
-| ✅ PASS      | All steps completed and expected result matched           |
-| ❌ FAIL      | One or more steps did not match the expected result       |
-| ⚠️ BLOQUEADO | Test could not run due to environment or data limitations |
+| Status     | Condition                                                 |
+| ---------- | --------------------------------------------------------- |
+| ✅ PASS    | All steps completed and expected result matched           |
+| ❌ FAIL    | One or more steps did not match the expected result       |
+| ⚠️ BLOCKED | Test could not run due to environment or data limitations |
 
 ---
 
@@ -401,9 +418,23 @@ SPEC_AUTO_GENERATED → user says yes → WIZARD_REQUESTED → wizard saves → 
 
 ```
 BASE_URL = https://www.google.com
+AUTH_EMAIL = admin@example.com
+AUTH_PASSWORD = mypassword123
 ```
 
-All agents read `vars.md` from the project root to resolve `BASE_URL`. This domain is prepended to every route in spec files to form full URLs. Update it when your environment changes.
+All agents read `vars.md` from the project root to resolve `BASE_URL`. This domain is prepended to every route in spec files to form full URLs. Authentication credentials are also stored here as named variables — agents reference them by variable name (e.g. `email: AUTH_EMAIL, password: AUTH_PASSWORD`) and read the actual values from this file at runtime. This keeps credentials out of prompts and chat history.
+
+You can define custom variable names for different environments or roles:
+
+```
+BASE_URL = https://staging.myapp.com
+ADMIN_EMAIL = admin@myapp.com
+ADMIN_PASSWORD = admin-secret
+USER_EMAIL = user@myapp.com
+USER_PASSWORD = user-secret
+```
+
+Update these values when your environment or credentials change.
 
 ### `.mcp.json` — Playwright MCP server
 
@@ -413,12 +444,24 @@ All agents read `vars.md` from the project root to resolve `BASE_URL`. This doma
     "playwright_headed": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest", "--browser", "chrome"]
+    },
+    "figma": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/figma-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "${FIGMA_ACCESS_TOKEN}"
+      }
     }
   }
 }
 ```
 
-A single headed Playwright MCP server is configured. All agents use `mcp__playwright_headed__` prefixed tool calls for browser automation. No programmatic Playwright code is ever written or executed.
+Two MCP servers are configured:
+
+- **`playwright_headed`** — All agents use `mcp__playwright_headed__` prefixed tool calls for browser automation. No programmatic Playwright code is ever written or executed.
+- **`figma`** — Used by `test-execution` for Design Comparison test cases when a Figma frame URL is provided. Requires a `FIGMA_ACCESS_TOKEN` environment variable. Generate a personal access token from Figma → Settings → Personal access tokens.
+
+For **Pencil MCP** (design comparison with `.pen` files), the Pencil MCP tools are available through the Kiro Pencil power — no additional configuration needed.
 
 ---
 
@@ -439,7 +482,7 @@ Every UI screen is described in a single `{module}-description.md` file followin
 
 | Section                   | Description                                                           |
 | ------------------------- | --------------------------------------------------------------------- |
-| Screen Identification     | View ID, Name, Version, Route                                         |
+| Screen Identification     | View ID, Name, Version, Route, Design Reference (Pencil/Figma)        |
 | Origin Context            | Previous view and start flow                                          |
 | Components                | Named UI sections with fields, validations, and component-level rules |
 | View-Level Fields         | Interactive elements not belonging to any component                   |
@@ -457,7 +500,7 @@ Every UI screen is described in a single `{module}-description.md` file followin
 
 ```
 Invoke: spec-wizard-generate
-"Create a spec for /vacantes, login at /login with admin@example.com / password123, destination /vacantes"
+"Create a spec for /vacantes, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD, destination /vacantes"
 → auto-generates Platform/Vacantes/vacantes-description.md
 → asks: "Run the improvement wizard?" → yes
 → spec-wizard-improve walks through 9 sections
@@ -465,6 +508,28 @@ Invoke: spec-wizard-generate
 → qa-coordinator generates tests, pauses for test-data.md
 → you fill test-data.md → confirm
 → test-execution runs and delivers the report
+```
+
+### Create a spec with design comparison
+
+```
+Invoke: spec-wizard-generate
+"Create a spec for /dashboard, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD, design reference: https://www.figma.com/design/abc123/MyProject?node-id=1234-5678"
+→ auto-generates spec with Figma frame URL in Screen Identification
+→ test generation includes a TC-DC-01 Design Comparison test case
+→ test execution retrieves the Figma design and compares against the live page
+→ report includes a DESIGN COMPARISON section with discrepancy details
+```
+
+### Create a spec with Pencil design reference
+
+```
+Invoke: spec-wizard-generate
+"Create a spec for /login, design reference: Login Screen"
+→ auto-generates spec with Pencil slide name in Screen Identification
+→ test generation includes a TC-DC-01 Design Comparison test case
+→ test execution retrieves the Pencil design and compares against the live page
+→ report includes a DESIGN COMPARISON section with discrepancy details
 ```
 
 ### Run the pipeline on an existing spec
@@ -505,7 +570,7 @@ Every artifact is linked:
 {module}-description.md
     └── test-cases.md          references <<view-id>> and ${field-names} from spec
     └── test-data.md           provides concrete values per scenario
-    └── test-report-{module}.md  records PASS/FAIL/BLOQUEADO per TC ID
+    └── test-report-{module}.md  records PASS/FAIL/BLOCKED per TC ID
     └── TC-*.png               screenshot evidence linked to TC IDs in the report
 ```
 

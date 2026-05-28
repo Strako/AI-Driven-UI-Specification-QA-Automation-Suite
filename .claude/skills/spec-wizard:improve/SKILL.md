@@ -7,6 +7,7 @@ You review and improve an **existing** UI screen specification file section by s
 **This is a multi-turn interactive skill. Never advance to the next section without explicit user confirmation.**
 
 Read before starting:
+
 1. `TEMPLATE.md` at the project root — canonical spec format and section structure
 2. `vars.md` — for BASE_URL
 3. `SPEC_FILE` (provided in your input) — the existing spec to improve
@@ -58,6 +59,7 @@ CURRENT CONTENT:
 **WAIT for the user's response before doing anything else.**
 
 If the user describes changes:
+
 1. Apply to the in-memory draft
 2. Show the updated section content
 3. Ask: "Updated. Anything else, or type **next** to continue?"
@@ -72,8 +74,12 @@ If the user types `next`, `yes`, or `skip`: lock the section in the draft and pr
 Show current Screen Identification block.
 
 Section-specific questions:
-> - Is the View ID correct? *(it's permanent once locked — only change if it was wrong)*
+
+> - Is the View ID correct? _(it's permanent once locked — only change if it was wrong)_
 > - Is the Name, Version, and Route correct?
+> - Is the **Pencil slide name / Figma frame URL** correct? If you have a Figma frame URL or a Pencil slide name for this view's design, provide it here. This enables design-vs-implementation comparison during test execution.
+>   - Figma example: `https://www.figma.com/design/abc123/MyProject?node-id=1234-5678`
+>   - Pencil example: `Login Screen` (the slide name in a .pen file)
 
 ---
 
@@ -82,6 +88,7 @@ Section-specific questions:
 Show current Origin Context block.
 
 Section-specific questions:
+
 > - What view does the user come **from** to reach this page? (or is it a direct entry point?)
 > - Is the start flow description accurate?
 
@@ -94,6 +101,7 @@ This section is reviewed **one component at a time**.
 For each component, show its full block, then ask:
 
 > **Component "{name}":**
+>
 > 1. Is the component name and role correct?
 > 2. Is there a **component-level validation** that applies to the whole component?
 >    (e.g. "on failed submit, a toast appears saying 'Invalid credentials'")
@@ -110,6 +118,7 @@ After all existing components are confirmed:
 > Describe each one. Type **next** when done adding.
 
 For each new component described by the user:
+
 - Generate Component ID: `<<{kebab-name}-{8-char-hex}>>`
 - Generate field names: `${module-fieldpurpose}` (module-prefixed, kebab-cased)
 - Show the full component block in TEMPLATE.md format
@@ -122,6 +131,7 @@ For each new component described by the user:
 Show current View-Level Fields block.
 
 Section-specific questions:
+
 > - Are there interactive elements that exist **directly in the view** but don't belong to any component?
 >   (e.g. a global error banner, floating action button, top-level navigation link)
 > - If yes: name, type, required, any validation and error message.
@@ -134,6 +144,7 @@ Section-specific questions:
 Show current Screen States block.
 
 Section-specific questions:
+
 > - Is each state correctly identified? Common states: `idle`, `loading`, `error`, `success`, `empty`, `disabled`
 > - For each state: is the **transition target** correct? The **trigger** correct? The **change conditions** correct?
 > - Are there states I missed?
@@ -145,6 +156,7 @@ Section-specific questions:
 Show current Related Views block.
 
 Section-specific questions:
+
 > - **Spec Files** — are there other views that must be set up first to fully test this one?
 >   If yes: spec file path, relationship, test context.
 > - **External Services** — does this view interact with any external services?
@@ -159,6 +171,7 @@ Section-specific questions:
 Show current Business Rules block.
 
 Section-specific questions:
+
 > - Are the listed rules correct? Remove or correct any that are wrong.
 > - For each rule: is the **condition** correct? The **action** (success path + violation path)?
 > - Additional rules to consider:
@@ -176,6 +189,7 @@ Section-specific questions:
 Show current Actions and Transitions block.
 
 Section-specific questions:
+
 > - For each action: is the **transition target** correct? The **expected reaction** correct?
 >   (Include: validation fires first? loading state? navigation on success?)
 > - Actions I may have missed:
@@ -192,6 +206,7 @@ Section-specific questions:
 Show current Detailed Flow Description.
 
 Section-specific questions:
+
 > - Is this narrative correct and complete?
 > - Should any steps be added, modified, or removed?
 > - Are there edge cases or alternative flows worth capturing?
@@ -213,13 +228,16 @@ Print:
 Show the **complete updated spec** as a preview (full file content in a code block).
 
 Ask:
+
 > **Ready to save?**
 > Type **save** (or **yes**) to write the file, or describe any final edits.
 
 Once confirmed:
+
 1. `Write` the full updated spec to `SPEC_FILE` (overwrite the existing file)
 
 Print:
+
 ```
 ✅  Spec updated: {SPEC_FILE}
 ```
@@ -231,6 +249,7 @@ Print:
 After the updated spec is written, you MUST immediately invoke the pipeline offer. Do not stop here.
 
 Use the **Skill** tool now:
+
 - skill: `spec-wizard:pipeline-offer`
 - args: `SPEC_FILE={SPEC_FILE} PROJECT_ROOT={project-root}`
 

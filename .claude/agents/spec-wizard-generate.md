@@ -18,6 +18,7 @@ You are the Spec Auto-Generator. You navigate to a live web page using Playwrigh
 2. Follow every phase in the skill file completely and in order.
 
 If the skill file cannot be found, stop and report:
+
 > ❌ Skill file `.claude/skills/spec-wizard:auto-generate/SKILL.md` not found. Verify the project root path.
 
 ---
@@ -27,6 +28,7 @@ If the skill file cannot be found, stop and report:
 > ⛔ **NEVER use programmatic Playwright.** Do not write Node.js code, do not `require('playwright')`, do not use `@playwright/test`, do not call `page.goto()`, do not run `npx playwright` via Bash. All browser automation must go through MCP tool calls exclusively.
 
 Always use the **headed** MCP server. Call every browser tool with the prefix `mcp__playwright_headed__`:
+
 - `mcp__playwright_headed__browser_navigate` — go to a URL
 - `mcp__playwright_headed__browser_snapshot` — read the DOM (call before every click/type)
 - `mcp__playwright_headed__browser_click` — click an element by `ref=`
@@ -40,16 +42,17 @@ Always use the **headed** MCP server. Call every browser tool with the prefix `m
 
 ## Input Contract
 
-| Field | Required | Description |
-|---|---|---|
-| `PAGE_URL` | Yes | Full URL or route to analyze |
-| `MODULE_NAME` | No | Kebab-case name (derived from URL if omitted) |
-| `AUTH_REQUIRED` | No | Whether the page requires login |
-| `LOGIN_ROUTE` | If auth | Login page URL or route |
-| `AUTH_EMAIL` | If auth | Login email or username |
-| `AUTH_PASSWORD` | If auth | Login password |
-| `DESTINATION_ROUTE` | If auth | Route to navigate to after login |
-| `OUTPUT_DIR` | No | Directory for spec file (default: `Platform/{ModuleName}/`) |
+| Field               | Required | Description                                                                                                                                                                                                                                                                                                                             |
+| ------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PAGE_URL`          | Yes      | Full URL or route to analyze                                                                                                                                                                                                                                                                                                            |
+| `MODULE_NAME`       | No       | Kebab-case name (derived from URL if omitted)                                                                                                                                                                                                                                                                                           |
+| `AUTH_REQUIRED`     | No       | Whether the page requires login                                                                                                                                                                                                                                                                                                         |
+| `LOGIN_ROUTE`       | If auth  | Login page URL or route                                                                                                                                                                                                                                                                                                                 |
+| `AUTH_EMAIL_VAR`    | If auth  | Variable name in `vars.md` containing the login email/username (e.g. `AUTH_EMAIL`). The actual value is read from `vars.md` at runtime — never hardcode credentials in the prompt.                                                                                                                                                      |
+| `AUTH_PASSWORD_VAR` | If auth  | Variable name in `vars.md` containing the login password (e.g. `AUTH_PASSWORD`). The actual value is read from `vars.md` at runtime — never hardcode credentials in the prompt.                                                                                                                                                         |
+| `DESTINATION_ROUTE` | If auth  | Route to navigate to after login                                                                                                                                                                                                                                                                                                        |
+| `OUTPUT_DIR`        | No       | Directory for spec file (default: `Platform/{ModuleName}/`)                                                                                                                                                                                                                                                                             |
+| `DESIGN_REFERENCE`  | No       | Pencil slide name or Figma frame URL for design comparison. If a Figma URL is provided, the system will use Figma MCP to retrieve the design. If a Pencil slide name is provided, the system will use Pencil MCP to retrieve the design. This value populates the "Pencil slide name / Figma frame URL" field in Screen Identification. |
 
 ---
 

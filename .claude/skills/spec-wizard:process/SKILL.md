@@ -28,6 +28,7 @@ After collecting user input for a section, always show the **current draft of th
 Welcome the user and collect all required inputs before touching the browser.
 
 Print:
+
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🧙  SPEC WIZARD — UI Description Creator
@@ -41,23 +42,27 @@ Then collect — in a **single message asking everything at once** that isn't al
 1. **Page URL** (required) — full URL or path of the page to analyze.
    - If a path is given (starts with `/`), resolve it as `BASE_URL + path`.
 2. **Module name** (optional) — short kebab-case identifier (e.g. `vacantes`, `job-detail`). If not given, derive it from the last URL segment.
-3. **Authentication** — ask: *"Does accessing this page require login? (yes/no)"*
+3. **Authentication** — ask: _"Does accessing this page require login? (yes/no)"_
    - If yes, also ask for:
      - Login route (e.g. `/login` or full URL)
-     - Email or username
-     - Password
+     - Email/username variable name in `vars.md` (e.g. `AUTH_EMAIL`)
+     - Password variable name in `vars.md` (e.g. `AUTH_PASSWORD`)
      - Destination route after login (the page to analyze — defaults to PAGE_URL if same domain)
-4. **Output directory** — ask: *"Where should I save the spec file? (default: `{ModuleName}/`)"*
+   - The actual credential values are read from `vars.md` at runtime — never hardcode them.
+4. **Output directory** — ask: _"Where should I save the spec file? (default: `{ModuleName}/`)"_
+5. **Design reference** (optional) — ask: _"Do you have a Pencil slide name or Figma frame URL for this view's design? (optional — enables design comparison during testing)"_
 
 Once all inputs are collected, confirm them:
 
 ```
 ✅  Got it! Here's what I'll do:
 
-  Page to analyze : {full URL}
-  Module name     : {module-name}
-  Auth required   : yes / no
-  Output file     : {OutputDir}/{module-name}-description.md
+  Page to analyze  : {full URL}
+  Module name      : {module-name}
+  Auth required    : yes / no
+  Auth credentials : email={VAR_NAME} password={VAR_NAME} (from vars.md)
+  Design reference : {Figma URL or Pencil slide name or "Not provided"}
+  Output file      : {OutputDir}/{module-name}-description.md
 
 Starting browser analysis…
 ```
@@ -78,18 +83,20 @@ Tool prefix for every browser call: **`mcp__playwright_headed__`**
 
 If `AUTH_REQUIRED = yes`:
 
-1. Navigate to the login URL: `mcp__playwright_headed__browser_navigate` with the login route.
-2. Call `mcp__playwright_headed__browser_snapshot` to get the DOM — identify the email/username and password fields and the submit button using their `ref=` values.
-3. Fill credentials:
-   - `mcp__playwright_headed__browser_type` on the email/username field (use `ref=` from snapshot)
-   - `mcp__playwright_headed__browser_type` on the password field (use `ref=` from snapshot)
-4. Click the submit button: `mcp__playwright_headed__browser_click` using the ref from snapshot.
-5. Call `mcp__playwright_headed__browser_snapshot` again — verify the URL changed or a post-login element is visible.
-6. If still on login page, report: *"Login may have failed — check credentials. Continuing analysis from current page."*
+1. Read `vars.md` and extract the credential values using the variable names provided by the user (e.g. if user said `email: AUTH_EMAIL, password: AUTH_PASSWORD`, look for `AUTH_EMAIL = ...` and `AUTH_PASSWORD = ...` in vars.md).
+2. Navigate to the login URL: `mcp__playwright_headed__browser_navigate` with the login route.
+3. Call `mcp__playwright_headed__browser_snapshot` to get the DOM — identify the email/username and password fields and the submit button using their `ref=` values.
+4. Fill credentials:
+   - `mcp__playwright_headed__browser_type` on the email/username field with the value from vars.md (use `ref=` from snapshot)
+   - `mcp__playwright_headed__browser_type` on the password field with the value from vars.md (use `ref=` from snapshot)
+5. Click the submit button: `mcp__playwright_headed__browser_click` using the ref from snapshot.
+6. Call `mcp__playwright_headed__browser_snapshot` again — verify the URL changed or a post-login element is visible.
+7. If still on login page, report: _"Login may have failed — check credentials in vars.md. Continuing analysis from current page."_
 
 ### 1.2 — Navigate to the target page
 
 If already on the target page after login, proceed. Otherwise:
+
 - `mcp__playwright_headed__browser_navigate` to the full target URL.
 
 ### 1.3 — Capture the page
@@ -104,10 +111,12 @@ If already on the target page after login, proceed. Otherwise:
 From the snapshot output, identify and record internally:
 
 **Page-level:**
+
 - Page title / main heading
 - Route (extract from URL — the path portion only, without domain)
 
 **Components** (forms, cards, panels, tables, modals, navbars, etc.):
+
 - Name (descriptive, human-readable)
 - Fields inside each component:
   - Field purpose (what it does)
@@ -117,17 +126,20 @@ From the snapshot output, identify and record internally:
   - Visible validation message (if any)
 
 **View-level interactive elements** (elements that don't belong to any component):
+
 - Global error banners
 - Floating action buttons
 - Navigation outside components
 
 **Visible states:**
+
 - Loading spinners/skeletons
 - Error messages
 - Empty states
 - Success messages
 
 **Visible actions:**
+
 - Buttons that trigger navigation
 - Links to other views
 - Form submits
@@ -170,6 +182,7 @@ Generate and present a draft Screen Identification block:
 - **Name**: Use the page title or heading detected from the snapshot.
 - **Version**: Default to `0.1.0`.
 - **Route**: The path extracted from the URL (no domain, no protocol).
+- **Pencil slide name / Figma frame URL**: Use the `DESIGN_REFERENCE` value if provided in the initial input. Otherwise, leave as "Not provided".
 
 Show the draft:
 
@@ -180,13 +193,20 @@ Here's my draft for Screen Identification:
   - **Name**: {detected name}
   - **Version**: 0.1.0
   - **Route**: {/path}
+  - **Pencil slide name / Figma frame URL**: {value or "Not provided"}
 ```
 
 Ask:
+
 > **Questions:**
+>
 > 1. Is the View ID and Name correct? Should I rename either?
 > 2. Is the version correct?
 > 3. Is the route correct?
+> 4. Do you have a **Pencil slide name** or **Figma frame URL** for this view's design? This enables design-vs-implementation comparison during test execution.
+>    - Figma example: `https://www.figma.com/design/abc123/MyProject?node-id=1234-5678`
+>    - Pencil example: `Login Screen` (the slide name in a .pen file)
+>    - If none: say "not applicable"
 
 Wait for the user's response. Apply any corrections before moving on.
 
@@ -205,6 +225,7 @@ Lock in the **View ID** — you will use it consistently throughout the rest of 
 Based on the URL and page structure, make an inference about where users come from.
 
 Show draft:
+
 ```
 Based on the URL and page structure, here's my guess for Origin Context:
 
@@ -213,7 +234,9 @@ Based on the URL and page structure, here's my guess for Origin Context:
 ```
 
 Ask:
+
 > **Questions:**
+>
 > 1. What view does the user typically navigate FROM to reach this page? (e.g., "from the home page", "from a job listing card", or "not applicable — this is an entry point")
 > 2. What is the starting flow that leads here? (e.g., "user clicks 'Post a Job' on the dashboard")
 > 3. If this is an entry point with no prior view, say "not applicable".
@@ -268,7 +291,9 @@ Show the full draft for the component in TEMPLATE.md format:
 ```
 
 Then ask (numbered, specific to this component):
+
 > **Questions for "{Component Name}":**
+>
 > 1. Is there a **component-level validation** that applies to the whole form/component? (e.g., "if credentials are invalid, a toast appears with message X")
 >    - If yes: what is the rule, the error message shown, and the condition that triggers it?
 > 2. For each field, what **validation rules and error messages** apply?
@@ -283,8 +308,10 @@ Then ask (numbered, specific to this component):
 Wait for the user's response. Apply all corrections and re-show the final draft for this component in full TEMPLATE.md format.
 
 After all detected components are confirmed, ask:
+
 > **Are there any additional components I missed that should be included?**
 > (e.g., a sidebar, a navigation panel, a modal, a notification area)
+>
 > - If yes: describe each one and I'll add it. When done, say "no more components".
 > - If no: say "no more components".
 
@@ -308,7 +335,9 @@ View-level elements detected:
 ```
 
 Ask:
+
 > **Questions:**
+>
 > 1. Are there any interactive elements that exist directly in the view but don't belong to any component above? (e.g., a global error banner, a floating action button, a top-level navigation link)
 > 2. If yes: describe each one (name, type, required, any validation/message).
 > 3. If none: say "not applicable".
@@ -335,6 +364,7 @@ Detected states:
 ```
 
 For each detected state, show a draft:
+
 ```
   - **State**: {state-name}
     - **Transition to**: (unknown — see question below)
@@ -343,7 +373,9 @@ For each detected state, show a draft:
 ```
 
 Ask:
+
 > **Questions:**
+>
 > 1. For each detected state, what is the **transition target** (where does the view go after this state)?
 > 2. What **conditions** must be met for the view to enter each state?
 > 3. Are there **other states** I missed? Common ones to consider:
@@ -374,7 +406,9 @@ Detected navigation links to other views:
 ```
 
 Ask:
+
 > **Questions:**
+>
 > 1. **Spec Files** — Are there other views that must be set up first to fully test this one?
 >    - Example: "an admin must create a job posting before this public listing can show it"
 >    - For each: what is the related view's spec file path? What is the relationship and test context?
@@ -405,6 +439,7 @@ Potential business rules inferred from the UI:
 ```
 
 For each inferred rule, draft:
+
 ```
   - **Rule**: `<<{rule-kebab-name}-{uuid}>>`
     - **Description**: {description}
@@ -413,7 +448,9 @@ For each inferred rule, draft:
 ```
 
 Ask:
+
 > **Questions:**
+>
 > 1. Are my inferred business rules correct? Correct or remove any that are wrong.
 > 2. What **conditions** trigger each rule, and what **action** occurs (success path and violation path)?
 > 3. Are there additional business rules I missed? Think about:
@@ -439,6 +476,7 @@ Apply the user's response. If "not applicable", write: `Not applicable to this d
 List all user-triggered actions detected (button clicks, form submits, link navigation):
 
 For each detected action, show a draft:
+
 ```
   - **User Action**: `${field-name}`
     - **Transition**: (unknown — see question below)
@@ -446,7 +484,9 @@ For each detected action, show a draft:
 ```
 
 Ask:
+
 > **Questions:**
+>
 > 1. For each action above:
 >    - What is the **transition target**? (which view `<<view-id>>`, which route, or which state)
 >    - What is the **exact expected reaction** when this action fires? (e.g., "validation fires first, then loading state, then navigation to /admin on success")
@@ -473,6 +513,7 @@ Apply the user's response. Show the final actions draft.
 Using all the data collected from the previous sections, generate a detailed step-by-step narrative of how a user moves through this view from entry to exit.
 
 Rules for the narrative:
+
 - Use `${field-name}` for every user interaction.
 - Use `<<view-id>>` for every navigation reference.
 - Include real-time validation behavior.
@@ -481,6 +522,7 @@ Rules for the narrative:
 - Write in present tense.
 
 Show the generated narrative:
+
 ```
 Here's the Detailed Flow Description I generated from all your answers:
 
@@ -490,7 +532,9 @@ Here's the Detailed Flow Description I generated from all your answers:
 ```
 
 Ask:
+
 > **Questions:**
+>
 > 1. Is this narrative correct and complete?
 > 2. Should I add, modify, or remove any steps?
 > 3. Are there any edge cases or alternative flows worth mentioning here?
@@ -510,6 +554,7 @@ Apply any corrections. Show the final revised narrative.
 Assemble the complete spec file in memory. The output file is a **filled instance of TEMPLATE.md** — it uses TEMPLATE.md as its base, with all blank fields replaced by the data collected in the wizard. It includes the full "LLM Instructions — Test Case Generation" section verbatim from TEMPLATE.md.
 
 Show a preview:
+
 ```
 ✅ Wizard complete! Here's the full spec I'll save:
 
@@ -523,15 +568,19 @@ Output path: {OutputDir}/{module-name}-description.md
 ```
 
 Ask:
+
 > **Is this spec correct and ready to save?**
+>
 > - Reply **"yes"** or **"save"** to write the file.
 > - Reply with corrections if anything needs to change (I'll revise and show the preview again).
 
 Once confirmed, write the file:
+
 1. Use `Bash` to create the output directory if needed: `mkdir -p {OutputDir}`
 2. Use `Write` to save the complete spec to `{OutputDir}/{module-name}-description.md`
 
 Confirm:
+
 ```
 ✅ Spec file saved: {OutputDir}/{module-name}-description.md
 ```
@@ -646,6 +695,7 @@ Reply "yes" to start, or "no" to stop here.
 ```
 
 - If **yes**: dispatch the **qa-coordinator** agent using the Agent tool with:
+
   ```
   SPEC_FILE: {OutputDir}/{module-name}-description.md
   PROJECT_ROOT: {project root absolute path}

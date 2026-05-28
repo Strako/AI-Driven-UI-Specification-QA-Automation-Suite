@@ -21,14 +21,17 @@ Before generating anything, read the following files in order:
 All output must follow the conventions defined in `TEMPLATE.md`. Apply them exactly.
 
 **Field references**
+
 - Reference every field, input, button, link, or interactive element using its `${field-name}` placeholder as defined in the spec.
 - Never substitute `${field-name}` with a concrete value inside test cases.
 - When a field belongs to a related view (not the current one), prefix it with its source view ID: `<<view-id>>.${field-name}`.
 
 **View references**
+
 - Reference every view using its `<<view-id>>` identifier as defined in the spec.
 
 **Full URL construction**
+
 - Construct full URLs in preconditions and navigation steps as: `BASE_URL` + `Route` from the spec.
 - Example: `BASE_URL=https://app.example.com` + `/login` → `https://app.example.com/login`.
 
@@ -45,8 +48,10 @@ Cover every applicable test type:
 - **Functional** — detailed validation of each component, field rule, state transition, business rule, and action in the spec
 - **Edge Case** — boundary conditions, empty states, max/min values, and unusual but valid interactions
 - **Exploratory** — scenarios implied by the spec holistically that are not explicitly listed but follow logically from the described behavior
+- **Design Comparison** — visual and structural comparison between the live page and the original design reference (only when `Pencil slide name / Figma frame URL` is provided in Screen Identification and is not empty, "N/A", or "Not provided")
 
 Specifically ensure coverage of:
+
 - Every field validation inside every component
 - Every component-level validation
 - Every validation defined on view-level fields
@@ -55,6 +60,7 @@ Specifically ensure coverage of:
 - Every action and its expected reaction
 - Every cross-view scenario from the **Related Views** section — each cross-view test must be fully self-contained, starting with the setup steps in the related view and ending with the assertion in the current view
 - For **External Service** entries: do not test the service directly; generate a test case that stubs or mocks it and asserts the expected behavior of the current view
+- **Design Comparison** (when applicable): if the `Pencil slide name / Figma frame URL` field in Screen Identification contains a valid reference (not empty, not "N/A", not "Not provided"), generate exactly one Design Comparison test case following Rule 6 in TEMPLATE.md. This test case instructs the executor to retrieve the design from Figma MCP or Pencil MCP and compare it against the live page, documenting all visual and structural discrepancies.
 
 ---
 
@@ -67,7 +73,7 @@ Write a file named `test-cases.md` in the same directory as the spec file, using
 
 ## [TC-001] (Title)
 
-- **Type**: Happy Path | Smoke | Functional | Edge Case | Exploratory
+- **Type**: Happy Path | Smoke | Functional | Edge Case | Exploratory | Design Comparison
 - **Description**: (One sentence describing what this test validates)
 - **Preconditions**: (Required state, session, data, or navigation before the test begins. Use <<view-id>> for views and ${field-name} for field values. Include the full URL when navigation is required. Omit this block if there are no preconditions.)
 - **Steps**:
@@ -85,6 +91,7 @@ Repeat the block for each test case.
 After writing `test-cases.md`, write a second file named `test-data.md` in the same directory. This is a standalone fillable document — it contains only data, never test logic.
 
 Rules:
+
 - Organize by scenario using the same TC IDs and titles from Artifact 1.
 - Under each scenario, group fields by their source view using `<<view-id>>` as a section header.
 - List every `${field-name}` referenced in the test case under the correct view section, with an empty fill-in slot.
@@ -97,17 +104,17 @@ Rules:
 ## [TC-001] (Title)
 
 ### <<view-id>>
-- ${field-name}: 
-- ${field-name}: 
+- ${field-name}:
+- ${field-name}:
 
 ### <<related-view-id>>
-- ${field-name}: 
-- ${field-name}: 
+- ${field-name}:
+- ${field-name}:
 
 ## [TC-002] (Title)
 
 ### <<view-id>>
-- ${field-name}: 
+- ${field-name}:
 ```
 
 Repeat for each test case that requires input data.
@@ -117,6 +124,7 @@ Repeat for each test case that requires input data.
 ### Step 6 — Report completion
 
 Once both files are written, output the structured `---GENERATION-COMPLETE---` block as defined in the agent instructions, then provide a human-readable summary:
+
 - Path to `test-cases.md` and total number of test cases generated, broken down by type.
 - Path to `test-data.md` and total number of scenarios included.
 - Any related view spec files that were read and incorporated into cross-view test cases.
