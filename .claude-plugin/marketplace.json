@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "AI-Driven-UI-Specification",
-      "source": ".",
+      "source": "./",
       "description": "AI-powered end-to-end UI test automation using Claude agents — auto-generates specs from live pages, creates test cases, and executes browser tests via Playwright.",
       "version": "1.0.0",
       "author": {
