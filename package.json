@@ -1,0 +1,34 @@
+{
+  "name": "AI-Driven-UI-Specification",
+  "version": "1.0.0",
+  "description": "AI-powered end-to-end UI test automation using Claude agents — auto-generates specs from live pages, creates test cases, and executes browser tests via Playwright, all in one coordinated pipeline.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Strako"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Strako/AI-Driven-UI-Specification-QA-Automation-Suite/tree/main"
+  },
+  "claude": {
+    "type": "plugin",
+    "longName": "AI-Driven-UI-Specification-QA-Automation-Suite",
+    "description": "AI-powered end-to-end UI test automation using Claude agents — auto-generates specs from live pages, creates test cases, and executes browser tests via Playwright, all in one coordinated pipeline.",
+    "creator": "Strako",
+    "repository": "https://github.com/Strako/AI-Driven-UI-Specification-QA-Automation-Suite/tree/main",
+    "license": "Apache-2.0",
+    "files": {
+      "agents": "agents/",
+      "skills": "skills/",
+      "hooks": "hooks/",
+      "settings": "settings.json",
+      "mcp": ".mcp.json",
+      "root": [
+        "TEMPLATE.md",
+        "vars.md",
+        "user-guide.md",
+        "README.md"
+      ]
+    }
+  }
+}

@@ -6,141 +6,69 @@ A Claude-native agent system for end-to-end UI test automation. From a live page
 
 ---
 
-## Requirements & Installation
+## Install as a Claude Code Plugin
+
+The fastest way to get started. One command installs all agents, skills, hooks, settings, and root files directly into your project.
 
 ### Prerequisites
 
-| Dependency                                                        | Minimum Version | Purpose                                            |
-| ----------------------------------------------------------------- | --------------- | -------------------------------------------------- |
-| [Node.js](https://nodejs.org/)                                    | v18+            | Runtime for `npx` and Playwright MCP server        |
-| [npm](https://www.npmjs.com/)                                     | v9+             | Package manager (ships with Node.js)               |
-| [Python 3](https://www.python.org/)                               | v3.8+           | Used by pipeline hooks for JSON parsing            |
-| [Google Chrome](https://www.google.com/chrome/)                   | Latest stable   | Browser used by Playwright MCP in headed mode      |
-| [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) | Latest          | Agent runtime that executes the multi-agent system |
-| Git                                                               | v2.30+          | Version control                                    |
+| Dependency | Minimum Version | Purpose |
+|---|---|---|
+| [Node.js](https://nodejs.org/) | v18+ | Runtime for `npx` and Playwright MCP server |
+| [npm](https://www.npmjs.com/) | v9+ | Package manager (ships with Node.js) |
+| [Python 3](https://www.python.org/) | v3.8+ | Used by pipeline hooks for JSON parsing |
+| [Google Chrome](https://www.google.com/chrome/) | Latest stable | Browser used by Playwright MCP in headed mode |
+| [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) | Latest | Agent runtime that executes the multi-agent system |
 
-### System Requirements
+**System requirements:** macOS, Linux, or Windows (WSL recommended) · 4 GB RAM minimum · ~500 MB disk
 
-- **OS:** macOS, Linux, or Windows (WSL recommended on Windows)
-- **RAM:** 4 GB minimum (8 GB recommended — Chrome + Claude Code run concurrently)
-- **Disk:** ~500 MB for Chrome + Node.js dependencies
-
-### Installation
-
-#### 1. Install Node.js (if not already installed)
+### Option A — Claude Code Plugin (Recommended for users)
 
 ```bash
-# macOS (Homebrew)
-brew install node
-
-# Ubuntu / Debian
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Or download from https://nodejs.org/
+claude plugin install github:Strako/AI-Driven-UI-Specification-QA-Automation-Suite
 ```
 
-Verify:
+If published to npm:
 
 ```bash
-node --version   # v18.x or higher
-npx --version    # v9.x or higher
+claude plugin install ai-driven-ui-specification
 ```
 
-#### 2. Install Python 3 (if not already installed)
+After the plugin installs, complete the three-step setup:
 
 ```bash
-# macOS (Homebrew)
-brew install python3
+# 1. Fill in your app's base URL and credentials
+#    Edit vars.md at your project root
+BASE_URL = https://your-app.example.com
+AUTH_EMAIL = admin@your-app.example.com
+AUTH_PASSWORD = your-password
 
-# Ubuntu / Debian
-sudo apt-get install python3
+# 2. Create the output directory
+mkdir -p Platform
+
+# 3. (Optional) Set Figma token if you plan to use design comparison
+echo 'export FIGMA_ACCESS_TOKEN=fig_xxxxxxxxxxxxx' >> ~/.zshrc && source ~/.zshrc
 ```
 
-Verify:
+Open Claude Code — all agents, skills, and hooks are ready.
+
+### Option B — Clone the repository (For contributors / modification)
 
 ```bash
-python3 --version   # 3.8 or higher
-```
-
-#### 3. Install Google Chrome
-
-Download from [google.com/chrome](https://www.google.com/chrome/) or:
-
-```bash
-# macOS (Homebrew)
-brew install --cask google-chrome
-```
-
-#### 4. Install Claude Code CLI
-
-Follow the official installation guide at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-code).
-
-```bash
-npm install -g @anthropic-ai/claude-code
-```
-
-#### 5. Clone the repository
-
-```bash
-git clone https://github.com/<your-org>/AI-Driven-UI-Specification-QA-Automation-Suite.git
+git clone https://github.com/Strako/AI-Driven-UI-Specification-QA-Automation-Suite.git
 cd AI-Driven-UI-Specification-QA-Automation-Suite
+
+# Copy plugin files into your target project
+cp agents/*.md        /path/to/your-project/.claude/agents/
+cp -r skills/*        /path/to/your-project/.claude/skills/
+cp hooks/*.sh         /path/to/your-project/.claude/hooks/
+chmod +x              /path/to/your-project/.claude/hooks/*.sh
+cp settings.json      /path/to/your-project/.claude/settings.json
+cp .mcp.json          /path/to/your-project/.mcp.json
+cp TEMPLATE.md vars.md user-guide.md README.md /path/to/your-project/
 ```
 
-#### 6. Verify Playwright MCP server
-
-The project uses `@playwright/mcp` via `npx` (no local install needed). Verify it can resolve:
-
-```bash
-npx -y @playwright/mcp@latest --help
-```
-
-This downloads the Playwright MCP server on first run. Subsequent runs use the cached version.
-
-#### 7. Configure your target URL
-
-Edit `vars.md` at the project root:
-
-```
-BASE_URL = https://your-app-domain.com
-AUTH_EMAIL = your-login-email@example.com
-AUTH_PASSWORD = your-login-password
-```
-
-`BASE_URL` is required. Authentication variables are optional — add them only if your pages require login. You can use any variable names you want (e.g. `ADMIN_EMAIL`, `USER_PASSWORD`, etc.) and reference them by name when invoking the agent.
-
-#### 7b. Configure Figma access (optional — for design comparison)
-
-If you plan to use Figma frame URLs for design comparison, set your Figma personal access token as a persistent environment variable:
-
-```bash
-# Add to ~/.zshrc or ~/.bashrc
-export FIGMA_ACCESS_TOKEN=fig_xxxxxxxxxxxxx
-```
-
-Then reload your shell (`source ~/.zshrc`) or open a new terminal. No per-project setup needed — the token is read from the OS environment automatically via the `${FIGMA_ACCESS_TOKEN}` reference in `.mcp.json`.
-
-Generate a token from: Figma → Settings → Personal access tokens.
-
-> If `FIGMA_ACCESS_TOKEN` is missing, the Figma MCP server simply won't start — Playwright still works, Figma features don't. Pencil MCP (for `.pen` files) requires no additional configuration.
-
-#### 8. Make hook scripts executable
-
-```bash
-chmod +x .claude/hooks/*.sh
-```
-
-### No `npm install` Required
-
-This project has **no `package.json` or `node_modules`**. All browser automation runs through the Playwright MCP server invoked via `npx` at runtime. There are no test scripts to install or build steps to run.
-
-### Quick Verification
-
-Run this to confirm everything is ready:
-
-```bash
-node --version && python3 --version && npx --version && echo "✅ All dependencies available"
-```
+> If your project already has `.claude/settings.json` or `.mcp.json`, manually merge the relevant sections instead of overwriting.
 
 ---
 
@@ -185,62 +113,81 @@ The system uses seven Claude agents organized into three stages: spec creation, 
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-![Mermaid Diagram](Agentic-flow-diagram/mermaid-diagram-1779992214636.svg)
-
 ---
 
-## Project Structure
+## Repository Structure
+
+This repository **is** the Claude Code plugin. Its root is the plugin root — when a user runs `claude plugin install`, Claude Code reads `package.json` here and copies files to the right places in their project.
 
 ```
-.
+.                                    ← repository root = plugin root
+├── package.json                     Claude Code plugin manifest (name, creator, file map)
+├── settings.json                    → merged into .claude/settings.json
+├── .mcp.json                        → merged into .mcp.json
+│
+├── agents/                          → installs to .claude/agents/
+│   ├── spec-wizard.md               Legacy entry point (delegates to spec-wizard-generate)
+│   ├── spec-wizard-generate.md      Auto-generates spec from live page via Playwright
+│   ├── spec-wizard-improve.md       Interactive section-by-section spec refinement
+│   ├── spec-wizard-pipeline.md      Shows spec summary and offers QA pipeline
+│   ├── qa-coordinator.md            Pipeline orchestrator (dispatches gen + exec)
+│   ├── test-generation.md           Test case generator from spec
+│   └── test-execution.md            Browser test executor via Playwright MCP
+│
+├── skills/                          → installs to .claude/skills/
+│   ├── spec-wizard:auto-generate/
+│   │   └── SKILL.md                 Navigate → analyze → generate spec → enrich → save
+│   ├── spec-wizard:improve/
+│   │   └── SKILL.md                 9-section interactive improvement wizard
+│   ├── spec-wizard:pipeline-offer/
+│   │   └── SKILL.md                 Summarize spec → offer QA pipeline
+│   ├── test-generation:process/
+│   │   └── SKILL.md                 6-step test case generation
+│   └── test-execution:process/
+│       └── SKILL.md                 6-step browser test execution + design comparison
+│
+├── hooks/                           → installs to .claude/hooks/
+│   ├── pipeline-on-user-prompt.sh   Routes user responses to next pipeline stage
+│   ├── pipeline-on-spec-created.sh  Detects spec file writes → updates state
+│   ├── pipeline-on-tests-generated.sh  Detects test-cases.md writes → updates state
+│   └── pipeline-on-report-written.sh   Detects report writes → marks complete
+│
+├── TEMPLATE.md                      → copied to project root (spec format standard)
+├── vars.md                          → copied to project root (fill in your values)
+├── README.md                        → copied to project root (this file)
+├── user-guide.md                    → copied to project root (step-by-step walkthrough)
+├── personal-explanation.md          Deep-dive into agents, skills, and hooks (not installed)
+└── INSTALL.md                       Detailed installation and setup guide
+```
+
+### After Plugin Installation — What Lands in Your Project
+
+```
+YOUR_PROJECT/
 ├── .claude/
-│   ├── agents/                          Claude agent definitions
-│   │   ├── spec-wizard.md               Legacy entry point (delegates to spec-wizard-generate)
-│   │   ├── spec-wizard-generate.md      Auto-generates spec from live page via Playwright
-│   │   ├── spec-wizard-improve.md       Interactive section-by-section spec refinement
-│   │   ├── spec-wizard-pipeline.md      Shows spec summary and offers QA pipeline
-│   │   ├── qa-coordinator.md            Pipeline orchestrator (dispatches gen + exec)
-│   │   ├── test-generation.md           Test case generator from spec
-│   │   └── test-execution.md            Browser test executor via Playwright MCP
-│   │
-│   ├── skills/                          Agent skill instructions
-│   │   ├── spec-wizard:auto-generate/
-│   │   │   └── SKILL.md                 Auto-gen: navigate → analyze → write spec
-│   │   ├── spec-wizard:improve/
-│   │   │   └── SKILL.md                 9-section interactive improvement wizard
-│   │   ├── spec-wizard:pipeline-offer/
-│   │   │   └── SKILL.md                 Summarize spec → offer QA pipeline
-│   │   ├── test-generation:process/
-│   │   │   └── SKILL.md                 6-step test case generation
-│   │   └── test-execution:process/
-│   │       └── SKILL.md                 6-step browser test execution
-│   │
-│   ├── hooks/                           Pipeline state machine hooks
-│   │   ├── pipeline-on-user-prompt.sh   Routes user responses to next pipeline stage
-│   │   ├── pipeline-on-spec-created.sh  Detects spec file writes → updates state
-│   │   ├── pipeline-on-tests-generated.sh  Detects test-cases.md writes → updates state
-│   │   └── pipeline-on-report-written.sh   Detects report writes → marks complete
-│   │
-│   ├── .pipeline-state                  Current pipeline state (auto-managed)
-│   └── settings.local.json             Permissions, MCP servers, hook configuration
+│   ├── agents/                      7 agent definition files
+│   ├── skills/                      5 skill directories with SKILL.md files
+│   ├── hooks/                       4 pipeline hook scripts (executable)
+│   ├── settings.json                permissions + hook event configuration
+│   └── .pipeline-state              pipeline progress tracker (auto-managed)
 │
-├── Platform/                            Module output directory
-│   └── {ModuleName}/                    One folder per UI screen
-│       ├── {module}-description.md      UI screen spec (created by spec-wizard)
-│       ├── {module}-analysis.png        Screenshot from wizard analysis
-│       ├── test-cases.md                Generated test cases (data-agnostic)
-│       ├── test-data.md                 Fillable test data template
-│       ├── test-report-{module}.md      Execution report with pass/fail/blocked
-│       └── TC-*.png                     Screenshot evidence from test execution
+├── .mcp.json                        playwright_headed + figma MCP server config
 │
-├── docs/                                Requirements and user stories (optional)
-│   └── *.md / *.csv                    Requirement files scanned by requirements enrichment step
+├── Platform/                        ← create this: mkdir Platform
+│   └── {ModuleName}/                one folder per UI screen (auto-created by agents)
+│       ├── {module}-description.md  UI screen spec
+│       ├── {module}-analysis.png    screenshot from analysis
+│       ├── test-cases.md            generated test cases (data-agnostic)
+│       ├── test-data.md             fillable test data template
+│       ├── test-report-{module}.md  execution report
+│       └── TC-*.png                 screenshot evidence per test
 │
-├── TEMPLATE.md                          Canonical spec format and conventions
-├── vars.md                              Project-level configuration (BASE_URL)
-├── .mcp.json                            Playwright MCP server configuration
-├── README.md                            This file
-└── user-guide.md                        Step-by-step usage walkthrough
+├── docs/                            ← create this for requirements enrichment
+│   └── *.md / *.csv                requirements files scanned during spec generation
+│
+├── TEMPLATE.md                      canonical spec format (read by all agents)
+├── vars.md                          BASE_URL + credentials (fill in your values)
+└── user-guide.md                    step-by-step usage walkthrough
 ```
 
 ---
@@ -264,17 +211,17 @@ After saving, offers two paths:
 - **Yes** → launches `spec-wizard-improve` for interactive section-by-section refinement
 - **No** → launches `spec-wizard-pipeline` to offer the QA pipeline
 
-| Input               | Required | Description                                                                                                                                     |
-| ------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PAGE_URL`          | Yes      | Full URL or path to analyze                                                                                                                     |
-| `MODULE_NAME`       | No       | Kebab-case name (derived from URL if omitted)                                                                                                   |
-| `AUTH_REQUIRED`     | No       | Whether the page needs login first                                                                                                              |
-| `LOGIN_ROUTE`       | If auth  | Route or URL of the login page                                                                                                                  |
-| `AUTH_EMAIL_VAR`    | If auth  | Variable name in `vars.md` for login email/username (e.g. `AUTH_EMAIL`). Credentials are never hardcoded — always read from `vars.md`.          |
-| `AUTH_PASSWORD_VAR` | If auth  | Variable name in `vars.md` for login password (e.g. `AUTH_PASSWORD`). Credentials are never hardcoded — always read from `vars.md`.             |
-| `DESTINATION_ROUTE` | If auth  | Page to analyze after login                                                                                                                     |
-| `OUTPUT_DIR`        | No       | Output directory (default: `Platform/{ModuleName}/`)                                                                                            |
-| `DESIGN_REFERENCE`  | No       | Pencil slide name or Figma frame URL for design comparison. Populates the "Pencil slide name / Figma frame URL" field in Screen Identification. |
+| Input | Required | Description |
+|---|---|---|
+| `PAGE_URL` | Yes | Full URL or path to analyze |
+| `MODULE_NAME` | No | Kebab-case name (derived from URL if omitted) |
+| `AUTH_REQUIRED` | No | Whether the page needs login first |
+| `LOGIN_ROUTE` | If auth | Route or URL of the login page |
+| `AUTH_EMAIL_VAR` | If auth | Variable name in `vars.md` for login email/username (e.g. `AUTH_EMAIL`). Credentials are never hardcoded — always read from `vars.md`. |
+| `AUTH_PASSWORD_VAR` | If auth | Variable name in `vars.md` for login password (e.g. `AUTH_PASSWORD`). Credentials are never hardcoded — always read from `vars.md`. |
+| `DESTINATION_ROUTE` | If auth | Page to analyze after login |
+| `OUTPUT_DIR` | No | Output directory (default: `Platform/{ModuleName}/`) |
+| `DESIGN_REFERENCE` | No | Pencil slide name or Figma frame URL for design comparison. Populates the "Pencil slide name / Figma frame URL" field in Screen Identification. |
 
 **Output:** `Platform/{ModuleName}/{module}-description.md`
 
@@ -288,22 +235,12 @@ Takes an existing spec file and walks through all 9 content sections in order. F
 
 After saving, automatically invokes `spec-wizard-pipeline`.
 
-| Input          | Required | Description                                  |
-| -------------- | -------- | -------------------------------------------- |
-| `SPEC_FILE`    | Yes      | Path to the existing spec `.md` file         |
-| `PROJECT_ROOT` | No       | Project root path (auto-detected if omitted) |
+| Input | Required | Description |
+|---|---|---|
+| `SPEC_FILE` | Yes | Path to the existing spec `.md` file |
+| `PROJECT_ROOT` | No | Project root path (auto-detected if omitted) |
 
-**Sections reviewed (in order):**
-
-1. Screen Identification
-2. Origin Context
-3. Components (one at a time, with field-level questions)
-4. View-Level Fields
-5. Screen States
-6. Related Views
-7. Business Rules
-8. Actions and Transitions
-9. Detailed Flow Description
+**Sections reviewed (in order):** Screen Identification · Origin Context · Components (one at a time) · View-Level Fields · Screen States · Related Views · Business Rules · Actions and Transitions · Detailed Flow Description
 
 ---
 
@@ -313,10 +250,10 @@ After saving, automatically invokes `spec-wizard-pipeline`.
 
 Reads a completed spec file, shows a structured summary (components, fields, states, rules, actions), and offers to launch the full QA pipeline via `qa-coordinator`.
 
-| Input          | Required | Description                                  |
-| -------------- | -------- | -------------------------------------------- |
-| `SPEC_FILE`    | Yes      | Path to the completed spec file              |
-| `PROJECT_ROOT` | No       | Project root path (auto-detected if omitted) |
+| Input | Required | Description |
+|---|---|---|
+| `SPEC_FILE` | Yes | Path to the completed spec file |
+| `PROJECT_ROOT` | No | Project root path (auto-detected if omitted) |
 
 ---
 
@@ -326,11 +263,11 @@ Reads a completed spec file, shows a structured summary (components, fields, sta
 
 Collects a spec file path, then runs the full pipeline or individual stages. Always uses headed browser mode. Pauses between generation and execution for the user to fill `test-data.md`.
 
-| Mode                        | Trigger                                       |
-| --------------------------- | --------------------------------------------- |
-| **Full Pipeline** (default) | No specific stage mentioned                   |
-| **Generate Only**           | "generate", "test cases only", "create tests" |
-| **Execute Only**            | "execute", "run tests", "only execute"        |
+| Mode | Trigger |
+|---|---|
+| **Full Pipeline** (default) | No specific stage mentioned |
+| **Generate Only** | "generate", "test cases only", "create tests" |
+| **Execute Only** | "execute", "run tests", "only execute" |
 
 **Pipeline flow:**
 
@@ -363,10 +300,10 @@ Reads a spec file and produces two artifacts:
 
 Reads `test-cases.md` and `test-data.md`, hydrates placeholders with concrete values, executes every test sequentially via Playwright MCP, captures screenshots, and generates a structured report in technical English. For Design Comparison test cases, retrieves the original design from Figma MCP or Pencil MCP and compares it against the live implementation, documenting all visual and structural discrepancies.
 
-| Status     | Condition                                                 |
-| ---------- | --------------------------------------------------------- |
-| ✅ PASS    | All steps completed and expected result matched           |
-| ❌ FAIL    | One or more steps did not match the expected result       |
+| Status | Condition |
+|---|---|
+| ✅ PASS | All steps completed and expected result matched |
+| ❌ FAIL | One or more steps did not match the expected result |
 | ⚠️ BLOCKED | Test could not run due to environment or data limitations |
 
 ---
@@ -383,21 +320,19 @@ Kept for backward compatibility. When invoked, behaves as `spec-wizard-generate`
 
 Each agent loads its skill file at the start of every session. Skills contain step-by-step execution instructions that agents follow exactly.
 
-| Skill                        | Purpose                                                                                         |
-| ---------------------------- | ----------------------------------------------------------------------------------------------- |
-| `spec-wizard:auto-generate`  | Navigate → analyze DOM → generate spec in memory → enrich with requirements → save              |
-| `spec-wizard:improve`        | 9-section interactive wizard for refining an existing spec                                      |
-| `spec-wizard:pipeline-offer` | Summarize spec → offer QA pipeline dispatch                                                     |
-| `test-generation:process`    | Read spec → determine coverage → write test-cases.md + test-data.md                             |
-| `test-execution:process`     | Hydrate → execute via Playwright MCP → classify results → write report                          |
+| Skill | Purpose |
+|---|---|
+| `spec-wizard:auto-generate` | Navigate → analyze DOM → generate spec in memory → enrich with requirements → save |
+| `spec-wizard:improve` | 9-section interactive wizard for refining an existing spec |
+| `spec-wizard:pipeline-offer` | Summarize spec → offer QA pipeline dispatch |
+| `test-generation:process` | Read spec → determine coverage → write test-cases.md + test-data.md |
+| `test-execution:process` | Hydrate → execute via Playwright MCP → classify results → write report |
 
 ---
 
 ## Pipeline State Machine
 
 The system uses shell hooks and a `.pipeline-state` file to track progress through the automation pipeline. State transitions happen automatically based on file writes and user responses.
-
-**States:**
 
 ```
 [spec-wizard-generate auto-generates spec + optional requirements enrichment]
@@ -424,12 +359,12 @@ SPEC_AUTO_GENERATED → user says yes → WIZARD_REQUESTED → wizard saves → 
 
 **Hooks:**
 
-| Hook                             | Trigger            | Purpose                                      |
-| -------------------------------- | ------------------ | -------------------------------------------- |
-| `pipeline-on-user-prompt.sh`     | Every user message | Routes "yes/no/done" responses to next stage |
-| `pipeline-on-spec-created.sh`    | After Write tool   | Detects spec file creation in `Platform/`    |
-| `pipeline-on-tests-generated.sh` | After Write tool   | Detects `test-cases.md` creation             |
-| `pipeline-on-report-written.sh`  | After Write tool   | Detects `test-report-*.md` creation          |
+| Hook | Trigger | Purpose |
+|---|---|---|
+| `pipeline-on-user-prompt.sh` | Every user message | Routes "yes/no/done" responses to next stage |
+| `pipeline-on-spec-created.sh` | After Write tool | Detects spec file creation in `Platform/` |
+| `pipeline-on-tests-generated.sh` | After Write tool | Detects `test-cases.md` creation |
+| `pipeline-on-report-written.sh` | After Write tool | Detects `test-report-*.md` creation |
 
 ---
 
@@ -438,12 +373,12 @@ SPEC_AUTO_GENERATED → user says yes → WIZARD_REQUESTED → wizard saves → 
 ### `vars.md` — Project configuration
 
 ```
-BASE_URL = https://www.google.com
-AUTH_EMAIL = admin@example.com
-AUTH_PASSWORD = mypassword123
+BASE_URL = https://your-app.example.com
+AUTH_EMAIL = admin@your-app.example.com
+AUTH_PASSWORD = your-password
 ```
 
-All agents read `vars.md` from the project root to resolve `BASE_URL`. This domain is prepended to every route in spec files to form full URLs. Authentication credentials are also stored here as named variables — agents reference them by variable name (e.g. `email: AUTH_EMAIL, password: AUTH_PASSWORD`) and read the actual values from this file at runtime. This keeps credentials out of prompts and chat history.
+All agents read `vars.md` from the project root to resolve `BASE_URL`. Authentication credentials are stored here as named variables — agents reference them by variable name (e.g. `email: AUTH_EMAIL, password: AUTH_PASSWORD`) and read the actual values at runtime. This keeps credentials out of prompts and chat history.
 
 You can define custom variable names for different environments or roles:
 
@@ -455,63 +390,49 @@ USER_EMAIL = user@myapp.com
 USER_PASSWORD = user-secret
 ```
 
-Update these values when your environment or credentials change.
-
-### `.mcp.json` — Playwright MCP server
-
-```json
-{
-  "mcpServers": {
-    "playwright_headed": {
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest", "--browser", "chrome"]
-    },
-    "figma": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/figma-mcp@latest"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "${FIGMA_ACCESS_TOKEN}"
-      }
-    }
-  }
-}
-```
+### `.mcp.json` — MCP server configuration
 
 Two MCP servers are configured:
 
 - **`playwright_headed`** — All agents use `mcp__playwright_headed__` prefixed tool calls for browser automation. No programmatic Playwright code is ever written or executed.
-- **`figma`** — Used by `test-execution` for Design Comparison test cases when a Figma frame URL is provided. Requires a `FIGMA_ACCESS_TOKEN` environment variable. Generate a personal access token from Figma → Settings → Personal access tokens.
+- **`figma`** — Used by `test-execution` for Design Comparison test cases when a Figma frame URL is provided. Requires a `FIGMA_ACCESS_TOKEN` environment variable.
 
-For **Pencil MCP** (design comparison with `.pen` files), the Pencil MCP tools are available through the Kiro Pencil power — no additional configuration needed.
+Set the Figma token once in your shell profile:
+
+```bash
+export FIGMA_ACCESS_TOKEN=fig_xxxxxxxxxxxxx   # add to ~/.zshrc or ~/.bashrc
+```
+
+If `FIGMA_ACCESS_TOKEN` is missing, the Figma MCP server won't start — Playwright still works normally. Pencil MCP requires no additional configuration.
 
 ---
 
 ## Spec Format — `TEMPLATE.md`
 
-Every UI screen is described in a single `{module}-description.md` file following the conventions in `TEMPLATE.md`. The spec-wizard agents create these files; you can also create or edit them manually.
+Every UI screen is described in a single `{module}-description.md` file following the conventions in `TEMPLATE.md`.
 
 ### ID conventions
 
-| Entity              | Format                   | Example                              |
-| ------------------- | ------------------------ | ------------------------------------ |
-| View                | `<<readable-name-uuid>>` | `<<login-page-eea0589e-...>>`        |
-| Component           | `<<readable-name-uuid>>` | `<<login-form-ca815574-...>>`        |
-| Business Rule       | `<<rule-name-uuid>>`     | `<<auth-rule-f3a9c1b2>>`             |
-| Interactive element | `${field-name}`          | `${login-email}`, `${submit-button}` |
+| Entity | Format | Example |
+|---|---|---|
+| View | `<<readable-name-uuid>>` | `<<login-page-eea0589e>>` |
+| Component | `<<readable-name-uuid>>` | `<<login-form-ca815574>>` |
+| Business Rule | `<<rule-name-uuid>>` | `<<auth-rule-f3a9c1b2>>` |
+| Interactive element | `${field-name}` | `${login-email}`, `${submit-button}` |
 
 ### Spec sections
 
-| Section                   | Description                                                           |
-| ------------------------- | --------------------------------------------------------------------- |
-| Screen Identification     | View ID, Name, Version, Route, Design Reference (Pencil/Figma)        |
-| Origin Context            | Previous view and start flow                                          |
-| Components                | Named UI sections with fields, validations, and component-level rules |
-| View-Level Fields         | Interactive elements not belonging to any component                   |
-| Screen States             | Named states and transitions (loading, error, success, empty)         |
-| Related Views             | Spec-file dependencies and external services for cross-view testing   |
-| Business Rules            | Domain rules beyond individual field validations                      |
-| Actions and Transitions   | Every user-triggered action and its expected reaction                 |
-| Detailed Flow Description | Step-by-step narrative using `<<view-ids>>` and `${field-names}`      |
+| Section | Description |
+|---|---|
+| Screen Identification | View ID, Name, Version, Route, Design Reference (Pencil/Figma) |
+| Origin Context | Previous view and start flow |
+| Components | Named UI sections with fields, validations, and component-level rules |
+| View-Level Fields | Interactive elements not belonging to any component |
+| Screen States | Named states and transitions (loading, error, success, empty) |
+| Related Views | Spec-file dependencies and external services for cross-view testing |
+| Business Rules | Domain rules beyond individual field validations |
+| Actions and Transitions | Every user-triggered action and its expected reaction |
+| Detailed Flow Description | Step-by-step narrative using `<<view-ids>>` and `${field-names}` |
 
 ---
 
@@ -538,21 +459,11 @@ Invoke: spec-wizard-generate
 
 ```
 Invoke: spec-wizard-generate
-"Create a spec for /dashboard, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD, design reference: https://www.figma.com/design/abc123/MyProject?node-id=1234-5678"
+"Create a spec for /dashboard, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD,
+design reference: https://www.figma.com/design/abc123/MyProject?node-id=1234-5678"
 → auto-generates spec with Figma frame URL in Screen Identification
 → test generation includes a TC-DC-01 Design Comparison test case
 → test execution retrieves the Figma design and compares against the live page
-→ report includes a DESIGN COMPARISON section with discrepancy details
-```
-
-### Create a spec with Pencil design reference
-
-```
-Invoke: spec-wizard-generate
-"Create a spec for /login, design reference: Login Screen"
-→ auto-generates spec with Pencil slide name in Screen Identification
-→ test generation includes a TC-DC-01 Design Comparison test case
-→ test execution retrieves the Pencil design and compares against the live page
 → report includes a DESIGN COMPARISON section with discrepancy details
 ```
 
@@ -565,23 +476,6 @@ Invoke: qa-coordinator
 → pauses: "Fill test-data.md and confirm when ready"
 → you fill test-data.md → confirm
 → dispatches test-execution → test-report-login.md generated
-```
-
-### Generate test cases only
-
-```
-Invoke: qa-coordinator
-"Generate test cases only for Platform/Dashboard/dashboard-description.md"
-→ dispatches test-generation → done
-```
-
-### Execute tests on already-filled test data
-
-```
-Invoke: qa-coordinator
-"Execute tests for Platform/Login/login-description.md"
-→ verifies test-cases.md and test-data.md exist
-→ dispatches test-execution → report generated
 ```
 
 ---
@@ -598,4 +492,68 @@ Every artifact is linked:
     └── TC-*.png               screenshot evidence linked to TC IDs in the report
 ```
 
-Test IDs follow the format `TC-{TYPE}-{NN}` (e.g. `TC-SMK-01`, `TC-HP-01`, `TC-001`).
+Test IDs follow the format `TC-{TYPE}-{NN}` (e.g. `TC-SMK-01`, `TC-HP-01`).
+
+---
+
+## Contributing and Forking
+
+### Understanding the file layout
+
+Every modifiable part of the system lives in one of these four directories at the repo root:
+
+| Directory | What it contains | How to modify |
+|---|---|---|
+| `agents/` | Agent definitions (frontmatter + system prompt) | Edit the `.md` file for the agent you want to change |
+| `skills/` | Step-by-step execution instructions | Edit the `SKILL.md` inside the relevant subdirectory |
+| `hooks/` | Pipeline state machine (bash scripts) | Edit the `.sh` scripts; all use relative path resolution |
+| Root files | `TEMPLATE.md`, `vars.md`, `settings.json`, `.mcp.json` | Edit directly |
+
+See [personal-explanation.md](personal-explanation.md) for a deep-dive into how agents, skills, and hooks work together — including the exact data flow, state machine logic, and examples from this project.
+
+### Forking for a new use case
+
+```bash
+git clone https://github.com/Strako/AI-Driven-UI-Specification-QA-Automation-Suite.git my-custom-plugin
+cd my-custom-plugin
+
+# Modify what you need
+# agents/ → change agent behavior or add new agents
+# skills/ → change execution procedures
+# hooks/ → change pipeline state transitions
+# TEMPLATE.md → change the spec format
+
+# Test locally by installing into a project
+claude plugin install ./my-custom-plugin
+```
+
+### Adding a new agent
+
+1. Create `agents/my-agent.md` with the required frontmatter:
+
+```markdown
+---
+name: my-agent
+description: What this agent does and when to invoke it.
+model: claude-sonnet-4-6
+color: "#16A34A"
+tools: Read, Write, Glob
+---
+
+Your agent's system prompt here.
+```
+
+2. If the agent needs a skill, create `skills/my-agent:process/SKILL.md` and point to it from the agent's system prompt.
+
+3. Update `package.json` version and push.
+
+### Updating the plugin after changes
+
+```bash
+git add .
+git commit -m "feat: describe your change"
+git push
+
+# Users update with:
+claude plugin update github:Strako/AI-Driven-UI-Specification-QA-Automation-Suite
+```
