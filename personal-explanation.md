@@ -12,7 +12,10 @@ This repository is both the source code and the Claude Code plugin. The repo roo
 
 ```
 .                                    ← repo root = plugin root
-├── package.json                     Plugin manifest: declares name, creator, file mapping
+├── .claude-plugin/
+│   ├── plugin.json                  Plugin manifest: declares name, version, file mapping
+│   └── marketplace.json             Marketplace catalog so users can add this repo as a source
+├── package.json                     npm package metadata
 ├── settings.json                    Hook event configuration + MCP server permissions
 ├── .mcp.json                        Playwright and Figma MCP server definitions
 │
@@ -28,7 +31,7 @@ This repository is both the source code and the Claude Code plugin. The repo roo
 └── personal-explanation.md          This file — architecture reference
 ```
 
-When `claude plugin install` runs, it reads `package.json` and installs:
+When `claude plugin install` runs, it reads `.claude-plugin/plugin.json` and installs:
 - `agents/*.md` → `.claude/agents/`
 - `skills/**` → `.claude/skills/`
 - `hooks/*.sh` → `.claude/hooks/` (made executable automatically)
@@ -737,13 +740,13 @@ exit 0
 ### Releasing an update
 
 ```bash
-# Bump version in package.json
+# Bump version in .claude-plugin/plugin.json
 git add .
 git commit -m "feat: describe your change"
 git push
 
 # Users update with:
-claude plugin update github:Strako/AI-Driven-UI-Specification-QA-Automation-Suite
+claude plugin update AI-Driven-UI-Specification
 ```
 
 ---

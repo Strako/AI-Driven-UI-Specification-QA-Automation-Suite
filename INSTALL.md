@@ -14,6 +14,14 @@
 
 ## Option A — Install via Claude Code (Recommended)
 
+**Step 1 — Add this repository as a plugin marketplace (one-time per machine):**
+
+```bash
+claude plugin marketplace add Strako/AI-Driven-UI-Specification-QA-Automation-Suite
+```
+
+**Step 2 — Install the plugin into your project:**
+
 ```bash
 claude plugin install AI-Driven-UI-Specification
 ```

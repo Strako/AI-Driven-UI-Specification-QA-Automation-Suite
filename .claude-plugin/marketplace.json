@@ -1,0 +1,18 @@
+{
+  "name": "AI-Driven-UI-Specification",
+  "owner": {
+    "name": "Strako"
+  },
+  "description": "AI-powered end-to-end UI test automation suite — auto-generates UI specs, test cases, and executes Playwright browser tests via Claude agents.",
+  "plugins": [
+    {
+      "name": "AI-Driven-UI-Specification",
+      "source": ".",
+      "description": "AI-powered end-to-end UI test automation using Claude agents — auto-generates specs from live pages, creates test cases, and executes browser tests via Playwright.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Strako"
+      }
+    }
+  ]
+}

@@ -11,7 +11,11 @@ Step-by-step walkthrough from a live page URL to a complete test execution repor
 If you haven't installed the plugin yet, run:
 
 ```bash
-claude plugin install github:Strako/AI-Driven-UI-Specification-QA-Automation-Suite
+# Step 1 — add the marketplace (one-time per machine)
+claude plugin marketplace add Strako/AI-Driven-UI-Specification-QA-Automation-Suite
+
+# Step 2 — install the plugin into your project
+claude plugin install AI-Driven-UI-Specification
 ```
 
 This copies all agents, skills, hooks, settings, and root files into your project automatically. See [INSTALL.md](INSTALL.md) or the [README](README.md) for manual installation and prerequisites.
@@ -523,7 +527,7 @@ Invoke: qa-coordinator
 
 ## Tips
 
-- **Plugin updates** — keep the plugin current with `claude plugin update github:Strako/AI-Driven-UI-Specification-QA-Automation-Suite`. This pulls the latest agents, skills, and hooks without touching your `Platform/` output files or `vars.md`.
+- **Plugin updates** — keep the plugin current with `claude plugin update AI-Driven-UI-Specification`. This pulls the latest agents, skills, and hooks without touching your `Platform/` output files or `vars.md`.
 
 - **All output goes to `Platform/`** — every module gets its own subfolder. This keeps specs, test cases, and reports organized by screen.
 

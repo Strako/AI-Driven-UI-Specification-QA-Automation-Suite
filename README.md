@@ -24,14 +24,16 @@ The fastest way to get started. One command installs all agents, skills, hooks, 
 
 ### Option A — Claude Code Plugin (Recommended for users)
 
+**Step 1 — Add this repository as a plugin marketplace (one-time per machine):**
+
 ```bash
-claude plugin install github:Strako/AI-Driven-UI-Specification-QA-Automation-Suite
+claude plugin marketplace add Strako/AI-Driven-UI-Specification-QA-Automation-Suite
 ```
 
-If published to npm:
+**Step 2 — Install the plugin into your project:**
 
 ```bash
-claude plugin install ai-driven-ui-specification
+claude plugin install AI-Driven-UI-Specification
 ```
 
 After the plugin installs, complete the three-step setup:
@@ -117,11 +119,14 @@ The system uses seven Claude agents organized into three stages: spec creation, 
 
 ## Repository Structure
 
-This repository **is** the Claude Code plugin. Its root is the plugin root — when a user runs `claude plugin install`, Claude Code reads `package.json` here and copies files to the right places in their project.
+This repository **is** the Claude Code plugin. Its root is the plugin root — when a user runs `claude plugin install`, Claude Code reads `.claude-plugin/plugin.json` here and copies files to the right places in their project.
 
 ```
 .                                    ← repository root = plugin root
-├── package.json                     Claude Code plugin manifest (name, creator, file map)
+├── .claude-plugin/
+│   ├── plugin.json                  Claude Code plugin manifest (name, version, file map)
+│   └── marketplace.json             Marketplace catalog (lets users add this repo as a source)
+├── package.json                     npm package metadata
 ├── settings.json                    → merged into .claude/settings.json
 ├── .mcp.json                        → merged into .mcp.json
 │
@@ -523,8 +528,8 @@ cd my-custom-plugin
 # hooks/ → change pipeline state transitions
 # TEMPLATE.md → change the spec format
 
-# Test locally by installing into a project
-claude plugin install ./my-custom-plugin
+# Test locally by launching Claude Code with your plugin dir
+claude --plugin-dir ./my-custom-plugin
 ```
 
 ### Adding a new agent
@@ -555,5 +560,5 @@ git commit -m "feat: describe your change"
 git push
 
 # Users update with:
-claude plugin update github:Strako/AI-Driven-UI-Specification-QA-Automation-Suite
+claude plugin update AI-Driven-UI-Specification
 ```
