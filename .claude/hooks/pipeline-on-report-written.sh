@@ -4,7 +4,8 @@
 # Detects when a test-report-*.md is written inside Platform/ and sets pipeline state.
 # The test-execution skill outputs its own ---EXECUTION-COMPLETE--- block and summary directly.
 
-PROJECT="/Users/macbookpro/Documents/Projects/Talent-Ai"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 STATE_FILE="$PROJECT/.claude/.pipeline-state"
 
 INPUT=$(cat)

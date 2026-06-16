@@ -14,7 +14,7 @@ tools: Read, Write, Bash, Glob, Grep, mcp__playwright_headed
 > | **spec-wizard-improve** | Interactive section-by-section wizard to improve an existing spec |
 > | **spec-wizard-pipeline** | Show spec summary and offer the QA pipeline |
 
-When invoked, behave as **spec-wizard-generate**: load `.claude/skills/spec-wizard:auto-generate/SKILL.md` and follow it exactly.
+When invoked, behave as **spec-wizard-generate**: load `.claude/skills/spec-wizard:auto-generate/SKILL.md` and follow it exactly, including the requirements enrichment phase (Phase REQUIREMENTS) before writing the spec to disk.
 
 ## Skill Loading
 

@@ -111,15 +111,18 @@ AUTH_PASSWORD = your-login-password
 
 #### 7b. Configure Figma access (optional — for design comparison)
 
-If you plan to use Figma frame URLs for design comparison, set your Figma personal access token:
+If you plan to use Figma frame URLs for design comparison, set your Figma personal access token as a persistent environment variable:
 
 ```bash
-export FIGMA_ACCESS_TOKEN=your-figma-token-here
+# Add to ~/.zshrc or ~/.bashrc
+export FIGMA_ACCESS_TOKEN=fig_xxxxxxxxxxxxx
 ```
+
+Then reload your shell (`source ~/.zshrc`) or open a new terminal. No per-project setup needed — the token is read from the OS environment automatically via the `${FIGMA_ACCESS_TOKEN}` reference in `.mcp.json`.
 
 Generate a token from: Figma → Settings → Personal access tokens.
 
-> This is only needed if you provide Figma URLs as design references. Pencil MCP (for `.pen` files) requires no additional configuration.
+> If `FIGMA_ACCESS_TOKEN` is missing, the Figma MCP server simply won't start — Playwright still works, Figma features don't. Pencil MCP (for `.pen` files) requires no additional configuration.
 
 #### 8. Make hook scripts executable
 
@@ -152,12 +155,18 @@ The system uses seven Claude agents organized into three stages: spec creation, 
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  SPEC CREATION (3 agents)                                           │   │
 │  │                                                                     │   │
-│  │  spec-wizard-generate ──► {module}-description.md                   │   │
-│  │         │                                                           │   │
-│  │         ├── yes ──► spec-wizard-improve (interactive refinement)    │   │
-│  │         │                    │                                      │   │
-│  │         └── no ────────────-─┼──► spec-wizard-pipeline (summary)    │   │
-│  │                              └──► spec-wizard-pipeline (summary)    │   │
+│  │  spec-wizard-generate                                               │   │
+│  │       │                                                             │   │
+│  │       ├── 1. Playwright analysis (DOM + screenshots)                │   │
+│  │       ├── 2. Auto-generate spec in memory                           │   │
+│  │       ├── 3. [optional] Requirements enrichment                     │   │
+│  │       │        └── from file path (.md/.csv/.xlsx) or docs/ folder  │   │
+│  │       └── 4. Save {module}-description.md                           │   │
+│  │              │                                                      │   │
+│  │              ├── yes ──► spec-wizard-improve (section refinement)   │   │
+│  │              │                    │                                 │   │
+│  │              └── no ─────────────┼──► spec-wizard-pipeline          │   │
+│  │                                  └──► spec-wizard-pipeline          │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                       │
 │                              yes to pipeline                               │
@@ -201,8 +210,6 @@ The system uses seven Claude agents organized into three stages: spec creation, 
 │   │   │   └── SKILL.md                 9-section interactive improvement wizard
 │   │   ├── spec-wizard:pipeline-offer/
 │   │   │   └── SKILL.md                 Summarize spec → offer QA pipeline
-│   │   ├── spec-wizard:process/
-│   │   │   └── SKILL.md                 12-phase full wizard (legacy, used by spec-wizard.md)
 │   │   ├── test-generation:process/
 │   │   │   └── SKILL.md                 6-step test case generation
 │   │   └── test-execution:process/
@@ -226,6 +233,9 @@ The system uses seven Claude agents organized into three stages: spec creation, 
 │       ├── test-report-{module}.md      Execution report with pass/fail/blocked
 │       └── TC-*.png                     Screenshot evidence from test execution
 │
+├── docs/                                Requirements and user stories (optional)
+│   └── *.md / *.csv                    Requirement files scanned by requirements enrichment step
+│
 ├── TEMPLATE.md                          Canonical spec format and conventions
 ├── vars.md                              Project-level configuration (BASE_URL)
 ├── .mcp.json                            Playwright MCP server configuration
@@ -243,9 +253,15 @@ The system uses seven Claude agents organized into three stages: spec creation, 
 
 Navigates to a live page with Playwright MCP, analyzes the full DOM (including scrolling, tabs, and expandable sections), and produces a complete `{module}-description.md` spec file in one pass — no interactive interview required.
 
+Before writing the spec to disk, optionally enriches it with project requirements:
+
+- **File path** → reads the provided `.md`, `.csv`, or `.xlsx` file, extracts requirements relevant to this view, and refines the spec in memory
+- **`docs`** → auto-scans the `docs/` folder at the project root for requirement files and applies relevant ones. The agent derives the project root by locating `vars.md` via Glob — so "project root" always means the folder that contains your `vars.md`. If `docs/` does not exist or is empty, the agent prints a warning and saves the spec as generated without failing.
+- **`skip`** → saves the spec as generated without enrichment
+
 After saving, offers two paths:
 
-- **Yes** → launches `spec-wizard-improve` for interactive refinement
+- **Yes** → launches `spec-wizard-improve` for interactive section-by-section refinement
 - **No** → launches `spec-wizard-pipeline` to offer the QA pipeline
 
 | Input               | Required | Description                                                                                                                                     |
@@ -367,14 +383,13 @@ Kept for backward compatibility. When invoked, behaves as `spec-wizard-generate`
 
 Each agent loads its skill file at the start of every session. Skills contain step-by-step execution instructions that agents follow exactly.
 
-| Skill                        | Purpose                                                                |
-| ---------------------------- | ---------------------------------------------------------------------- |
-| `spec-wizard:auto-generate`  | Navigate → analyze DOM → generate complete spec in one pass            |
-| `spec-wizard:improve`        | 9-section interactive wizard for refining an existing spec             |
-| `spec-wizard:pipeline-offer` | Summarize spec → offer QA pipeline dispatch                            |
-| `spec-wizard:process`        | 12-phase full wizard with interview (legacy)                           |
-| `test-generation:process`    | Read spec → determine coverage → write test-cases.md + test-data.md    |
-| `test-execution:process`     | Hydrate → execute via Playwright MCP → classify results → write report |
+| Skill                        | Purpose                                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------------------- |
+| `spec-wizard:auto-generate`  | Navigate → analyze DOM → generate spec in memory → enrich with requirements → save              |
+| `spec-wizard:improve`        | 9-section interactive wizard for refining an existing spec                                      |
+| `spec-wizard:pipeline-offer` | Summarize spec → offer QA pipeline dispatch                                                     |
+| `test-generation:process`    | Read spec → determine coverage → write test-cases.md + test-data.md                             |
+| `test-execution:process`     | Hydrate → execute via Playwright MCP → classify results → write report                          |
 
 ---
 
@@ -385,6 +400,10 @@ The system uses shell hooks and a `.pipeline-state` file to track progress throu
 **States:**
 
 ```
+[spec-wizard-generate auto-generates spec + optional requirements enrichment]
+                                    ↓
+                            spec written to disk
+                                    ↓
 SPEC_AUTO_GENERATED → user says yes → WIZARD_REQUESTED → wizard saves → WIZARD_COMPLETE
                     → user says no  → PIPELINE_OFFER_REQUESTED
                                                          ↓
@@ -400,6 +419,8 @@ SPEC_AUTO_GENERATED → user says yes → WIZARD_REQUESTED → wizard saves → 
                                                          ↓
                                               EXECUTION_COMPLETE
 ```
+
+> The requirements enrichment step happens **before** the spec is written to disk, so it does not introduce new pipeline states. The `SPEC_AUTO_GENERATED` state is set only after the enriched spec is saved.
 
 **Hooks:**
 
@@ -496,12 +517,15 @@ Every UI screen is described in a single `{module}-description.md` file followin
 
 ## Workflow Examples
 
-### Create a spec from a live page (auto-generate + improve)
+### Create a spec from a live page (auto-generate + requirements enrichment + improve)
 
 ```
 Invoke: spec-wizard-generate
 "Create a spec for /vacantes, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD, destination /vacantes"
-→ auto-generates Platform/Vacantes/vacantes-description.md
+→ auto-generates spec in memory from live DOM analysis
+→ asks: "Requirements enrichment?" → provide /path/to/requirements.md (or "docs" / "skip")
+→ extracts relevant requirements → refines spec in memory
+→ saves enriched Platform/Vacantes/vacantes-description.md
 → asks: "Run the improvement wizard?" → yes
 → spec-wizard-improve walks through 9 sections
 → spec-wizard-pipeline shows summary and offers QA pipeline → yes

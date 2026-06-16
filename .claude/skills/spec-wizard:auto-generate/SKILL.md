@@ -191,6 +191,86 @@ Copy the full **LLM Instructions — Test Case Generation** section verbatim fro
 
 ---
 
+## Phase REQUIREMENTS — Enrich Spec with Project Requirements
+
+Before saving the spec to disk, offer the user an opportunity to enrich the generated spec with project requirements or user stories. This step refines the **in-memory spec draft** before writing.
+
+Print:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋  REQUIREMENTS ENRICHMENT (optional)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The spec has been generated from the live page.
+Before saving, would you like to enrich it with project requirements?
+
+  • Provide a file path  —  path to an .xlsx, .csv, or .md file containing
+    user stories or requirements for the platform
+    (e.g. /path/to/requirements.md)
+
+  • Type  docs  —  auto-scan the docs/ folder at the project root
+
+  • Type  skip  —  save the spec as-is without requirements enrichment
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Wait for the user's response before proceeding.**
+
+### If the user provides a file path:
+
+1. Determine the file extension:
+   - **.md or .csv**: Use `Read` to load the file contents. If the file exceeds 500 lines, read the first 500 lines as a representative sample and note the truncation.
+   - **.xlsx**: Binary Excel files cannot be read directly. Inform the user and ask them to re-export as `.csv` or `.md` and provide the new path, or type `skip` to continue without enrichment.
+2. From the file contents, identify every requirement, user story, or acceptance criterion **relevant to this specific view** — matched by any of: module name, route path, detected component names, or related feature keywords inferred from the DOM analysis.
+3. Discard requirements clearly aimed at unrelated modules or unrelated functionality.
+4. Apply the relevant requirements to the **in-memory spec draft** — do not write the file yet:
+   - **Components / Fields**: Add or correct fields described in requirements (e.g., "The dashboard must show total active jobs" → ensure a stats component contains this field).
+   - **Business Rules**: Add rules derived from acceptance criteria (e.g., "Only admin users may access this page" → add a business rule with a generated `<<rule-uuid>>`).
+   - **Screen States**: Add named states explicitly mentioned in requirements.
+   - **Actions and Transitions**: Add or correct transitions described in user stories.
+   - **Detailed Flow Description**: Expand the narrative with requirement-driven scenarios.
+5. Print a summary before proceeding to Write:
+
+```
+✅  Requirements enrichment applied
+
+  Source          : {file path}
+  Relevant items  : {N} requirements matched to {module-name}
+  Changes applied :
+    • {list each addition or correction, one per bullet}
+```
+
+### If the user types `docs`:
+
+1. Use `Bash` to list the contents of `docs/` at the project root:
+   `ls "{project-root}/docs/" 2>/dev/null || echo "(empty)"`
+2. If the folder is empty or does not exist:
+   Print: `⚠️  No files found in docs/. Saving spec as generated.`
+   Proceed immediately to Write phase.
+3. If files are found:
+   - Use `Read` to load every `.md` and `.csv` file found in `docs/`. Skip `.xlsx` and other binary files and note them as unreadable.
+   - Apply the same relevance filtering and in-memory spec refinement described in the file-path case above.
+4. Print a summary:
+
+```
+✅  Requirements enrichment applied from docs/
+
+  Files scanned   : {list of files read}
+  Relevant items  : {N} requirements matched to {module-name}
+  Changes applied :
+    • {list each addition or correction}
+```
+
+### If the user types `skip` (or any variant: "no", "none", "not now"):
+
+Print:
+```
+Skipping requirements enrichment. Saving spec as generated.
+```
+Proceed immediately to Write phase.
+
+---
+
 ## Write the Spec File
 
 1. `Bash`: `mkdir -p {output-dir}`

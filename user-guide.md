@@ -26,26 +26,42 @@ USER_PASSWORD = user-secret
 
 > **Security:** Credentials are stored only in `vars.md` and read at runtime. You never type actual passwords in the chat — only variable names like `AUTH_EMAIL` or `AUTH_PASSWORD`.
 
-That is the only manual configuration needed. The `.mcp.json` is already set up with the headed Playwright MCP server.
+That is the only required configuration. The `.mcp.json` is already set up with the headed Playwright MCP server.
+
+### Figma access token (optional — for design comparison)
+
+If you plan to provide a Figma frame URL as a design reference, set your Figma personal access token once in your shell profile:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+export FIGMA_ACCESS_TOKEN=fig_xxxxxxxxxxxxx
+```
+
+Then reload your shell (`source ~/.zshrc`) or open a new terminal. No per-project setup needed — the token is picked up automatically from your OS environment.
+
+Generate a token from: Figma → Settings → Personal access tokens.
+
+> If `FIGMA_ACCESS_TOKEN` is missing, the Figma MCP server simply won't start — Playwright still works, Figma features don't. You only need this token when using Figma URLs as design references.
 
 ---
 
 ## Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                           FULL PIPELINE                                  │
-│                                                                          │
-│  Step 1              Step 2              Step 3           Step 4         │
-│                                                                          │
-│  spec-wizard    →  spec-wizard    →  qa-coordinator  →  test-execution   │
-│  -generate         -improve           (automated)       (automated)      │
-│  (automated)       (you + AI)              │                  │          │
-│       │                 │                  │                  │          │
-│  {module}-         refined spec      test-cases.md     test-report-      │
-│  description.md                      test-data.md      {module}.md       │
-│                                      [YOU FILL THIS]   screenshots/      │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              FULL PIPELINE                                  │
+│                                                                             │
+│  Step 1          Step 1.5        Step 2          Step 3        Step 4       │
+│                                                                             │
+│  spec-wizard  → requirements  → spec-wizard  → qa-coord   → test-exec      │
+│  -generate      enrichment      -improve       (automated)   (automated)   │
+│  (automated)    (you + AI)      (you + AI)         │              │         │
+│       │              │               │              │              │         │
+│  spec in       refined spec    saved spec      test-cases    test-report    │
+│  memory        in memory       on disk         test-data     screenshots    │
+│                [optional]      [YOU FILL       [YOU FILL                    │
+│                                  this]          this]                       │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -116,8 +132,9 @@ After you confirm the inputs, the agent:
 4. **Captures** a screenshot (`{module}-analysis.png`) and the full accessibility tree
 5. **Scrolls** through the page and interacts with tabs/expandable sections
 6. **Analyzes** the DOM to identify components, fields, actions, and states
-7. **Generates** the complete spec following `TEMPLATE.md` format
-8. **Saves** to `Platform/{ModuleName}/{module}-description.md`
+7. **Generates** the complete spec in memory following `TEMPLATE.md` format
+8. **Asks about requirements enrichment** (see Step 1.5 below)
+9. **Saves** the enriched spec to `Platform/{ModuleName}/{module}-description.md`
 
 Then prints:
 
@@ -133,6 +150,90 @@ Would you like to run the improvement wizard to review and refine each section i
 - yes → opens the spec improvement wizard
 - no → goes straight to the QA pipeline offer
 ```
+
+---
+
+## Step 1.5 — Requirements Enrichment (Optional)
+
+Before writing the spec to disk, the agent offers to enrich the generated spec with project requirements or user stories. This step refines the spec in memory using your existing documentation, so the saved file already incorporates known business requirements.
+
+### The prompt you will see
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋  REQUIREMENTS ENRICHMENT (optional)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The spec has been generated from the live page.
+Before saving, would you like to enrich it with project requirements?
+
+  • Provide a file path  —  path to an .xlsx, .csv, or .md file containing
+    user stories or requirements for the platform
+
+  • Type  docs  —  auto-scan the docs/ folder at the project root
+
+  • Type  skip  —  save the spec as-is without requirements enrichment
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Option A — Provide a file path
+
+Type the path to your requirements file:
+
+```
+/path/to/requirements.md
+```
+
+Accepted formats:
+
+| Format  | How it is read                                                               |
+| ------- | ---------------------------------------------------------------------------- |
+| `.md`   | Read directly — user stories, acceptance criteria, feature descriptions      |
+| `.csv`  | Read directly — each row treated as a requirement                            |
+| `.xlsx` | Binary format — agent will ask you to re-export as `.csv` or `.md` first     |
+
+The agent reads the file, identifies requirements **relevant to this specific view** (matched by module name, route, component names, or feature keywords), and applies them to the in-memory spec:
+
+- Adds missing fields mentioned in requirements
+- Adds business rules derived from acceptance criteria
+- Adds screen states and actions described in user stories
+- Expands the Detailed Flow Description with requirement-driven scenarios
+
+After enrichment, the agent prints a summary:
+
+```
+✅  Requirements enrichment applied
+
+  Source          : /path/to/requirements.md
+  Relevant items  : 7 requirements matched to dashboard
+  Changes applied :
+    • Added field ${dashboard-active-jobs-count} to Stats Panel component
+    • Added business rule: Only admin users may access this view
+    • Added screen state: empty (no active jobs)
+```
+
+### Option B — Type `docs`
+
+If you have requirement files in the `docs/` folder at the project root, type `docs`. The agent scans all `.md` and `.csv` files in that folder, extracts requirements relevant to this view, and applies the same enrichment.
+
+```
+docs/
+├── requirements.md          ← scanned automatically
+├── user-stories.md          ← scanned automatically
+└── acceptance-criteria.csv  ← scanned automatically
+```
+
+### Option C — Type `skip`
+
+If you want to save the spec exactly as generated from the DOM analysis without any requirements enrichment, type `skip`. You can still refine the spec manually in Step 2 (the improvement wizard).
+
+### What requirements enrichment adds to the pipeline
+
+Requirements enrichment happens **before the spec is saved to disk**, so:
+
+- The saved `{module}-description.md` already contains requirements-driven content
+- The improvement wizard (Step 2) can focus on further manual corrections rather than filling in obvious requirements
+- Test generation produces test cases aligned with documented acceptance criteria
+- Business rules from requirements become their own test cases in the functional coverage
 
 ---
 
@@ -506,24 +607,29 @@ Invoke: qa-coordinator
 
 ## Quick Reference
 
-| You want to…                           | Agent                  | Message                                                                                           |
-| -------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- |
-| Auto-generate a spec from a live page  | `spec-wizard-generate` | `"Create a spec for /dashboard, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD"` |
-| Auto-generate with design comparison   | `spec-wizard-generate` | `"Create a spec for /dashboard, design reference: https://figma.com/design/...?node-id=..."`      |
-| Auto-generate with Pencil design       | `spec-wizard-generate` | `"Create a spec for /login, design reference: Login Screen"`                                      |
-| Improve an existing spec interactively | `spec-wizard-improve`  | `"Improve Platform/Dashboard/dashboard-description.md"`                                           |
-| See spec summary + offer pipeline      | `spec-wizard-pipeline` | `"Summarize Platform/Dashboard/dashboard-description.md"`                                         |
-| Full pipeline on an existing spec      | `qa-coordinator`       | `"Run the full QA pipeline for Platform/Dashboard/dashboard-description.md"`                      |
-| Generate test cases only               | `qa-coordinator`       | `"Generate test cases only for Platform/Dashboard/dashboard-description.md"`                      |
-| Execute already-filled tests           | `qa-coordinator`       | `"Execute tests for Platform/Dashboard/dashboard-description.md"`                                 |
-| Create spec without login              | `spec-wizard-generate` | `"Create a spec for /jobs, module name vacantes"`                                                 |
-| Use legacy wizard (full interview)     | `spec-wizard`          | `"Create a spec for /dashboard"`                                                                  |
+| You want to…                                    | Agent                  | Message / Action                                                                                        |
+| ----------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| Auto-generate a spec from a live page           | `spec-wizard-generate` | `"Create a spec for /dashboard, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD"`       |
+| Auto-generate with design comparison            | `spec-wizard-generate` | `"Create a spec for /dashboard, design reference: https://figma.com/design/...?node-id=..."`           |
+| Auto-generate with Pencil design                | `spec-wizard-generate` | `"Create a spec for /login, design reference: Login Screen"`                                            |
+| Enrich spec with requirements from a file       | `spec-wizard-generate` | At the enrichment prompt, type a file path (e.g. `/docs/requirements.md`)                              |
+| Enrich spec with requirements from docs/ folder | `spec-wizard-generate` | At the enrichment prompt, type `docs`                                                                   |
+| Skip requirements enrichment                    | `spec-wizard-generate` | At the enrichment prompt, type `skip`                                                                   |
+| Improve an existing spec interactively          | `spec-wizard-improve`  | `"Improve Platform/Dashboard/dashboard-description.md"`                                                 |
+| See spec summary + offer pipeline               | `spec-wizard-pipeline` | `"Summarize Platform/Dashboard/dashboard-description.md"`                                               |
+| Full pipeline on an existing spec               | `qa-coordinator`       | `"Run the full QA pipeline for Platform/Dashboard/dashboard-description.md"`                            |
+| Generate test cases only                        | `qa-coordinator`       | `"Generate test cases only for Platform/Dashboard/dashboard-description.md"`                            |
+| Execute already-filled tests                    | `qa-coordinator`       | `"Execute tests for Platform/Dashboard/dashboard-description.md"`                                       |
+| Create spec without login                       | `spec-wizard-generate` | `"Create a spec for /jobs, module name vacantes"`                                                       |
+| Use legacy wizard (full interview)              | `spec-wizard`          | `"Create a spec for /dashboard"`                                                                        |
 
 ---
 
 ## Tips
 
 - **All output goes to `Platform/`** — every module gets its own subfolder under `Platform/`. This keeps specs, test cases, and reports organized by screen.
+
+- **Requirements enrichment** — place your project requirements or user stories as `.md` or `.csv` files in the `docs/` folder at the project root. When the agent asks about requirements enrichment, type `docs` to apply them automatically. Alternatively, type a direct file path to any `.md`, `.csv`, or `.xlsx` file anywhere on your filesystem. The agent matches requirements to the specific view being analyzed, so it only applies relevant items and ignores content for other modules. The agent locates "project root" by finding `vars.md` via a Glob search — so your `docs/` folder just needs to sit next to `vars.md`. If `docs/` does not exist or is empty, the agent prints `⚠️ No files found in docs/. Saving spec as generated.` and continues without failing.
 
 - **Design comparison** — provide a Figma frame URL or Pencil slide name when creating a spec to enable automatic design-vs-implementation comparison. The system will retrieve the design using the appropriate MCP tool (Figma MCP for Figma URLs, Pencil MCP for Pencil slide names) and compare it against the live page during test execution. Discrepancies are classified by severity and documented in the report.
 

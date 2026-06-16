@@ -7,7 +7,8 @@
 #   SPEC_AUTO_GENERATED  + no   → PIPELINE_OFFER_REQ   → invoke spec-wizard:pipeline-offer skill
 #   GENERATION_COMPLETE  + done → TEST_DATA_READY       → dispatch test-execution
 
-PROJECT="/Users/macbookpro/Documents/Projects/Talent-Ai"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 STATE_FILE="$PROJECT/.claude/.pipeline-state"
 
 [[ ! -f "$STATE_FILE" ]] && exit 0

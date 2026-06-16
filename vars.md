@@ -1,3 +1,3 @@
-BASE_URL = https://www.google.com
-AUTH_EMAIL = email-here@example.com
-AUTH_PASSWORD = password-here
+BASE_URL = https://your-app-domain.com
+AUTH_EMAIL = your-login-email@example.com
+AUTH_PASSWORD = your-login-password
