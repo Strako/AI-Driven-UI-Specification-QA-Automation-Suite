@@ -36,7 +36,7 @@ claude plugin marketplace add Strako/AI-Driven-UI-Specification-QA-Automation-Su
 claude plugin install AI-Driven-UI-Specification
 ```
 
-After the plugin installs, complete the three-step setup:
+After the plugin installs, complete the setup:
 
 ```bash
 # 1. Fill in your app's base URL and credentials
@@ -48,7 +48,12 @@ AUTH_PASSWORD = your-password
 # 2. Create the output directory
 mkdir -p Platform
 
-# 3. (Optional) Set Figma token if you plan to use design comparison
+# 3. (Optional) Create the requirements folder
+#    Place .xlsx, .csv, or .md requirement files here — the spec generator
+#    will scan this folder automatically when you type "docs" at the enrichment prompt
+mkdir -p docs
+
+# 4. (Optional) Set Figma token if you plan to use design comparison
 echo 'export FIGMA_ACCESS_TOKEN=fig_xxxxxxxxxxxxx' >> ~/.zshrc && source ~/.zshrc
 ```
 
