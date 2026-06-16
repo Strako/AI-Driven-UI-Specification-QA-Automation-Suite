@@ -7,7 +7,11 @@
   "plugins": [
     {
       "name": "AI-Driven-UI-Specification",
-      "source": "https://github.com/Strako/AI-Driven-UI-Specification-QA-Automation-Suite",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Strako/AI-Driven-UI-Specification-QA-Automation-Suite.git",
+        "sha": "7bafad557f18198845da379f08138db54dc2d59b"
+      },
       "description": "AI-powered end-to-end UI test automation using Claude agents — auto-generates specs from live pages, creates test cases, and executes browser tests via Playwright.",
       "version": "1.0.0",
       "author": {

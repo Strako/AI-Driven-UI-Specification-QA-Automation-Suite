@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl -s https://code.claude.com/docs/en/plugin-marketplaces.md)"
+      "Bash(curl -s https://code.claude.com/docs/en/plugin-marketplaces.md)",
+      "Bash(claude --version)",
+      "Bash(xargs ls -la)",
+      "Bash(git ls-remote *)"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "playwright_headed",
+    "figma"
+  ]
 }
