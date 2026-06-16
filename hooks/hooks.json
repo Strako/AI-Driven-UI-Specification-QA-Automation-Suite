@@ -1,22 +1,5 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(chmod +x:*)",
-      "Bash(npx --version)",
-      "mcp__playwright_*",
-      "mcp__playwright_headed__*",
-      "mcp__figma__*",
-      "mcp__pencil__*",
-      "Bash(pkill -f \"mcp-chrome\")",
-      "mcp__claude_ai_Figma__get_design_context",
-      "mcp__claude_ai_Figma__get_screenshot",
-      "Bash(grep -E \"\\\\.\\(md|json|yml|yaml|sh\\)$\")"
-    ]
-  },
-  "enabledMcpjsonServers": [
-    "playwright_headed",
-    "figma"
-  ],
+  "description": "AI-Driven UI Specification QA Automation Suite pipeline hooks",
   "hooks": {
     "PostToolUse": [
       {

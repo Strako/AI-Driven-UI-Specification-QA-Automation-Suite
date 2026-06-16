@@ -4,7 +4,11 @@
       "Bash(curl -s https://code.claude.com/docs/en/plugin-marketplaces.md)",
       "Bash(claude --version)",
       "Bash(xargs ls -la)",
-      "Bash(git ls-remote *)"
+      "Bash(git ls-remote *)",
+      "Read(//Users/macbookpro/.claude/plugins/cache/AI-Driven-UI-Specification/AI-Driven-UI-Specification/1.0.0/**)",
+      "Bash(echo \"---\")",
+      "Read(//Users/macbookpro/.claude/plugins/cache/AI-Driven-UI-Specification/AI-Driven-UI-Specification/1.0.0/hooks/**)",
+      "Bash(echo \"no hooks dir\")"
     ]
   },
   "disabledMcpjsonServers": [

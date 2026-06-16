@@ -4,8 +4,7 @@
 # Detects when test-cases.md is written inside Platform/ and sets pipeline state.
 # The qa-coordinator Stage Gate handles the user-facing pause and instructions directly.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT="${PWD}"
 STATE_FILE="$PROJECT/.claude/.pipeline-state"
 
 INPUT=$(cat)

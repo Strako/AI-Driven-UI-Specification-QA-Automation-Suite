@@ -5,8 +5,7 @@
 #   - WIZARD_REQUESTED state → wizard just finished → set WIZARD_COMPLETE → trigger pipeline-offer skill
 #   - Any other state       → auto-gen just wrote spec → set SPEC_AUTO_GENERATED → offer wizard
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT="${PWD}"
 STATE_FILE="$PROJECT/.claude/.pipeline-state"
 
 INPUT=$(cat)
