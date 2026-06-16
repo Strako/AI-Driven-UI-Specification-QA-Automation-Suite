@@ -185,7 +185,7 @@ The system uses seven Claude agents organized into three stages: spec creation, 
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-![Mermaid Diagram](Agentic-flow-diagram/mermaid-diagram.png)
+![Mermaid Diagram](Agentic-flow-diagram/mermaid-diagram-1779992214636.svg)
 
 ---
 
