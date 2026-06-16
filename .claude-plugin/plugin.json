@@ -8,8 +8,5 @@
   },
   "repository": "https://github.com/Strako/AI-Driven-UI-Specification-QA-Automation-Suite",
   "license": "Apache-2.0",
-  "keywords": ["qa", "playwright", "testing", "ui", "automation", "claude"],
-  "agents": "./agents/",
-  "skills": "./skills/",
-  "mcpServers": "./.mcp.json"
+  "keywords": ["qa", "playwright", "testing", "ui", "automation", "claude"]
 }
