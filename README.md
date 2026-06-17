@@ -2,7 +2,7 @@
 
 A Claude-native agent system for end-to-end UI test automation. From a live page URL to a full test execution report — with automatic spec generation, interactive improvement, and browser-driven test execution.
 
-> **New here?** Read the [User Guide](user-guide.md) for a complete step-by-step walkthrough.
+> **New here?** Read the [User Guide](user-guide.md) or the [Docs](https://docs-ai-driven-ui-specs.netlify.app/#/docs#architecture)for a complete step-by-step walkthrough.
 
 ---
 
