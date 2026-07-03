@@ -160,7 +160,8 @@ This repository **is** the Claude Code plugin. Its root is the plugin root — w
 │   ├── pipeline-on-user-prompt.sh   Routes user responses to next pipeline stage
 │   ├── pipeline-on-spec-created.sh  Detects spec file writes → updates state
 │   ├── pipeline-on-tests-generated.sh  Detects test-cases.md writes → updates state
-│   └── pipeline-on-report-written.sh   Detects report writes → marks complete
+│   ├── pipeline-on-report-written.sh   Detects report writes → marks complete
+│   └── pipeline-on-execution-dispatch.sh  Gates the test-execution dispatch on auto mode
 │
 ├── TEMPLATE.md                      → copied to project root (spec format standard)
 ├── vars.md                          → copied to project root (fill in your values)
@@ -177,7 +178,7 @@ YOUR_PROJECT/
 ├── .claude/
 │   ├── agents/                      7 agent definition files
 │   ├── skills/                      5 skill directories with SKILL.md files
-│   ├── hooks/                       4 pipeline hook scripts (executable)
+│   ├── hooks/                       5 pipeline hook scripts (executable)
 │   ├── settings.json                permissions + hook event configuration
 │   └── .pipeline-state              pipeline progress tracker (auto-managed)
 │
@@ -190,7 +191,7 @@ YOUR_PROJECT/
 │       ├── test-cases.md            generated test cases (data-agnostic)
 │       ├── test-data.md             fillable test data template
 │       ├── test-report-{module}.md  execution report
-│       └── TC-*.png                 screenshot evidence per test
+│       └── TC-*.png                 timestamped screenshot evidence per test
 │
 ├── docs/                            ← create this for requirements enrichment
 │   └── *.md / *.csv                requirements files scanned during spec generation
@@ -271,13 +272,23 @@ Reads a completed spec file, shows a structured summary (components, fields, sta
 
 > **Model:** Opus · **Dispatches:** `test-generation`, `test-execution`
 
-Collects a spec file path, then runs the full pipeline or individual stages. Always uses headed browser mode. Pauses between generation and execution for the user to fill `test-data.md`.
+Collects a spec file path, then runs the full pipeline or individual stages. Always uses headed browser mode. Pauses between generation and execution for the user to fill `test-data.md`. After execution, the final summary includes the results breakdown plus an **execution window** (`{STARTED} – {COMPLETED}`) taken from the test-execution report timestamps.
 
 | Mode | Trigger |
 |---|---|
 | **Full Pipeline** (default) | No specific stage mentioned |
 | **Generate Only** | "generate", "test cases only", "create tests" |
 | **Execute Only** | "execute", "run tests", "only execute" |
+
+**Execution Roughness Gate** — before dispatching `test-execution`, a `PreToolUse` hook checks whether the session is running in Claude Code's **auto** permission mode:
+
+- If the initiating message already states a level explicitly (e.g. "just run the critical tests"), that always wins — no question is asked, in either mode.
+- Otherwise, in **auto** mode, execution defaults to running **all** test cases (level 3) — nobody is necessarily watching to answer a question.
+- Otherwise (not auto mode, no explicit level), the hook blocks the dispatch and `qa-coordinator` asks the user directly:
+
+  > **1** — Critical only · **2** — Critical + Mid · **3** — All
+
+  using the Critical/Mid/Low counts from test-generation's `SEVERITY_BREAKDOWN`. Once answered, the dispatch retries with `EXECUTION_LEVEL` set.
 
 **Pipeline flow:**
 
@@ -295,12 +306,14 @@ spec file → test-generation → test-cases.md + test-data.md
 
 > **Model:** Sonnet · **Skill:** `test-generation:process`
 
-Reads a spec file and produces two artifacts:
+Reads a spec file (never `vars.md`) and produces two artifacts:
 
-- `test-cases.md` — complete, data-agnostic test cases using `${field-name}` placeholders
+- `test-cases.md` — complete, data-agnostic test cases using `${field-name}` placeholders for values and `<<view-id>>` / `{{BASE_URL}}` for navigation — the domain is never resolved here, so the same file runs unmodified against any environment
 - `test-data.md` — fillable template with empty slots organized by scenario
 
 **Coverage types:** Happy Path · Smoke · Functional · Edge Cases · Exploratory · Design Comparison (when design reference is provided)
+
+Every test case also gets a **Severity** — Critical, Mid, or Low — judged by business impact rather than derived mechanically from Type (Design Comparison is always Critical). This is what lets `test-execution` later scope a run to only the highest-severity tests. The completion signal includes a `SEVERITY_BREAKDOWN` (Critical/Mid/Low counts) alongside the existing per-type breakdown.
 
 ---
 
@@ -308,13 +321,18 @@ Reads a spec file and produces two artifacts:
 
 > **Model:** Sonnet · **Skill:** `test-execution:process` · **MCP:** `playwright_headed`, `figma`, `pencil`
 
-Reads `test-cases.md` and `test-data.md`, hydrates placeholders with concrete values, executes every test sequentially via Playwright MCP, captures screenshots, and generates a structured report in technical English. For Design Comparison test cases, retrieves the original design from Figma MCP or Pencil MCP and compares it against the live implementation, documenting all visual and structural discrepancies.
+Reads `test-cases.md`, `test-data.md`, and `vars.md`, hydrates `${field-name}` placeholders with concrete values, and resolves every `<<view-id>>` / `{{BASE_URL}}` token into a real URL using `vars.md` — this is the only step in the whole pipeline where `BASE_URL` becomes a concrete domain. Before running anything, filters test cases by `EXECUTION_LEVEL` against their `Severity` (see **Execution Roughness Gate** above) — excluded cases are marked `⏭ SKIPPED` and never executed. Executes every remaining test sequentially via Playwright MCP and captures a timestamped screenshot for every test case regardless of outcome (✅ PASS or ❌ FAIL). Since the agent has no `Bash`/`date` access, every timestamp — report header, Executive Summary, screenshot filenames — is obtained by calling `mcp__playwright_headed__browser_evaluate` to read the clock inside the browser page. For Design Comparison test cases, retrieves the original design from Figma MCP or Pencil MCP and compares it against the live implementation, documenting all visual and structural discrepancies.
+
+| Input | Required | Description |
+|---|---|---|
+| `EXECUTION_LEVEL` | No | `1` = Critical only, `2` = Critical + Mid, `3` = All. Defaults to `3` if absent (e.g. when invoked directly, bypassing qa-coordinator's roughness gate). |
 
 | Status | Condition |
 |---|---|
 | ✅ PASS | All steps completed and expected result matched |
 | ❌ FAIL | One or more steps did not match the expected result |
 | ⚠️ BLOCKED | Test could not run due to environment or data limitations |
+| ⏭ SKIPPED | Excluded by the configured `EXECUTION_LEVEL` — never executed |
 
 ---
 
@@ -360,21 +378,35 @@ SPEC_AUTO_GENERATED → user says yes → WIZARD_REQUESTED → wizard saves → 
                                                          ↓
                                               TEST_DATA_READY
                                                          ↓
-                                              test-execution dispatched
+                                              test-execution dispatch attempted
                                                          ↓
-                                              EXECUTION_COMPLETE
+                              ┌──── auto mode, or EXECUTION_LEVEL already known ────┐
+                              ↓                                                     │
+                    test-execution dispatched                                       │
+                              │                                                     │
+                              ↓                                            not auto mode,
+                     EXECUTION_COMPLETE                                    no level yet
+                                                                                     │
+                                                                                     ↓
+                                                                     AWAITING_EXECUTION_LEVEL
+                                                                                     ↓
+                                                                     user answers 1 / 2 / 3
+                                                                                     ↓
+                                                                          TEST_DATA_READY
+                                                                        (retry dispatch, above)
 ```
 
-> The requirements enrichment step happens **before** the spec is written to disk, so it does not introduce new pipeline states. The `SPEC_AUTO_GENERATED` state is set only after the enriched spec is saved.
+> The requirements enrichment step happens **before** the spec is written to disk, so it does not introduce new pipeline states. The `SPEC_AUTO_GENERATED` state is set only after the enriched spec is saved. `AWAITING_EXECUTION_LEVEL` is a detour off `TEST_DATA_READY`, not a new terminal stage — it always resolves back into the same dispatch step, now carrying `EXECUTION_LEVEL`.
 
 **Hooks:**
 
 | Hook | Trigger | Purpose |
 |---|---|---|
-| `pipeline-on-user-prompt.sh` | Every user message | Routes "yes/no/done" responses to next stage |
+| `pipeline-on-user-prompt.sh` | Every user message | Routes "yes/no/done" responses to next stage; resolves 1/2/3 execution-level replies |
 | `pipeline-on-spec-created.sh` | After Write tool | Detects spec file creation in `Platform/` |
 | `pipeline-on-tests-generated.sh` | After Write tool | Detects `test-cases.md` creation |
 | `pipeline-on-report-written.sh` | After Write tool | Detects `test-report-*.md` creation |
+| `pipeline-on-execution-dispatch.sh` | Before the Agent tool dispatches test-execution | Checks `permission_mode`; blocks the dispatch if not auto mode and no `EXECUTION_LEVEL` is set yet |
 
 ---
 
@@ -388,7 +420,7 @@ AUTH_EMAIL = admin@your-app.example.com
 AUTH_PASSWORD = your-password
 ```
 
-All agents read `vars.md` from the project root to resolve `BASE_URL`. Authentication credentials are stored here as named variables — agents reference them by variable name (e.g. `email: AUTH_EMAIL, password: AUTH_PASSWORD`) and read the actual values at runtime. This keeps credentials out of prompts and chat history.
+Generated test cases never contain a resolved `BASE_URL` — they reference views symbolically (`<<view-id>>` / `{{BASE_URL}}`) and only the test-execution agent reads `vars.md` to resolve `BASE_URL` into a real URL, at run time. This means switching environments (dev/staging/prod) is just a matter of editing `BASE_URL` in `vars.md` — no test case ever needs to be regenerated. Authentication credentials are stored here as named variables — agents reference them by variable name (e.g. `email: AUTH_EMAIL, password: AUTH_PASSWORD`) and read the actual values at runtime. This keeps credentials out of prompts and chat history.
 
 You can define custom variable names for different environments or roles:
 
@@ -429,6 +461,9 @@ Every UI screen is described in a single `{module}-description.md` file followin
 | Component | `<<readable-name-uuid>>` | `<<login-form-ca815574>>` |
 | Business Rule | `<<rule-name-uuid>>` | `<<auth-rule-f3a9c1b2>>` |
 | Interactive element | `${field-name}` | `${login-email}`, `${submit-button}` |
+| `vars.md` variable | `{{VARIABLE_NAME}}` | `{{BASE_URL}}` |
+
+> **Never hardcode `BASE_URL`.** Navigation to a spec'd view is always written as `<<view-id>>`; an ad-hoc path not backed by a view is written as `{{BASE_URL}}` + path (e.g. `{{BASE_URL}}/reset-password?token=${token}`). Both stay literal in `test-cases.md` and `test-data.md` — only `test-execution` resolves them, at run time, from `vars.md`.
 
 ### Spec sections
 
@@ -488,6 +523,30 @@ Invoke: qa-coordinator
 → dispatches test-execution → test-report-login.md generated
 ```
 
+### Run the pipeline with the execution roughness gate (not in auto mode)
+
+```
+Invoke: qa-coordinator
+"Run the full QA pipeline for Platform/Login/login-description.md"
+→ test-generation reports SEVERITY_BREAKDOWN: 6 Critical / 9 Mid / 3 Low
+→ you fill test-data.md → confirm
+→ dispatch attempt is blocked (not auto mode, no level specified)
+→ qa-coordinator asks: "1 — Critical only (6) · 2 — Critical + Mid (15) · 3 — All (18)"
+→ you reply "2"
+→ dispatch retries with EXECUTION_LEVEL: 2
+→ test-execution runs 15 tests, marks the 3 Low-severity ones ⏭ SKIPPED
+→ test-report-login.md generated with the skip breakdown
+```
+
+Skip the question entirely by stating the level upfront — this works the same whether or not auto mode is on:
+
+```
+Invoke: qa-coordinator
+"Run the full QA pipeline for Platform/Login/login-description.md, just the critical tests"
+→ qa-coordinator parses "just the critical tests" as EXECUTION_LEVEL 1
+→ dispatch goes straight through, no question asked
+```
+
 ---
 
 ## Traceability
@@ -498,11 +557,11 @@ Every artifact is linked:
 {module}-description.md
     └── test-cases.md          references <<view-id>> and ${field-names} from spec
     └── test-data.md           provides concrete values per scenario
-    └── test-report-{module}.md  records PASS/FAIL/BLOCKED per TC ID
-    └── TC-*.png               screenshot evidence linked to TC IDs in the report
+    └── test-report-{module}.md  records PASS/FAIL/BLOCKED/SKIPPED per TC ID + execution level + execution window
+    └── TC-*.png               timestamped screenshot evidence linked to TC IDs in the report
 ```
 
-Test IDs follow the format `TC-{TYPE}-{NN}` (e.g. `TC-SMK-01`, `TC-HP-01`).
+Test IDs follow the format `TC-{TYPE}-{NN}` (e.g. `TC-SMK-01`, `TC-HP-01`). Screenshots follow `{TC-ID}-{short-description}-{filename-timestamp}.png` (e.g. `TC-SMK-01-page-loaded-20260703-143205.png`) — evidence is captured for every ✅ PASS and ❌ FAIL case; ⚠️ BLOCKED cases never execute, so there's nothing to capture.
 
 ---
 

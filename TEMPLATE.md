@@ -45,6 +45,23 @@ ${field-name}
 
 ---
 
+### Environment Variable Placeholder Format
+
+Any value that lives in `vars.md` (e.g. `BASE_URL`, `AUTH_EMAIL`, `AUTH_PASSWORD`) is referenced using:
+
+```
+{{VARIABLE_NAME}}
+```
+
+This placeholder is never resolved into its concrete value while writing specs or generating test cases — it stays literal in every persisted artifact (`test-cases.md`, `test-data.md`). It is resolved exactly once, at test-execution time, by reading the current value from `vars.md`. This is what lets the same `test-cases.md` run unmodified against any environment (dev/staging/prod) — only `vars.md` needs to change, never the test cases.
+
+**Usage examples:**
+
+- Base URL alone: `{{BASE_URL}}`
+- Full URL for a path not backed by a spec'd view: `{{BASE_URL}}/reset-password?token=${token}`
+
+---
+
 ## Screen Description Template
 
 > **One spec file = one view.** Each file defines exactly one `<<view-id>>`. Components and view-level fields are contained within that single view.
@@ -57,9 +74,10 @@ ${field-name}
 - **Name**: (Descriptive name of the view)
 - **Version**: (Design or template version)
 - **Route**: (The path for this view relative to the base — e.g. `/login`, `/jobs/public`)
-  > The full URL is resolved by combining `BASE_URL` from `vars.md` (project root) with this route.
+  > The full URL is resolved by combining `{{BASE_URL}}` with this route.
   > Never define the domain or protocol here — only the path.
-  > Example: `BASE_URL=https://app.example.com` + `/login` → `https://app.example.com/login`
+  > Never write the resolved concrete domain anywhere in a spec or in generated test artifacts. Reference this view via `<<view-id>>` (or `{{BASE_URL}}` + path for ad-hoc paths not backed by a view) and let the test-execution skill resolve it from `vars.md` at run time.
+  > Example: Route `/login` → referenced in test cases as `<<view-id>>`, resolved by the executor to `{{BASE_URL}}/login` (e.g. `https://app.example.com/login`).
 - **Pencil slide name / Figma frame URL**: (Name of the pencil slide or Figma Frame URL containing the design)
 
 ---
@@ -312,11 +330,12 @@ This test case compares the live web page against the original design (from Figm
 ## [TC-DC-01] Comparación de diseño vs implementación
 
 - **Type**: Design Comparison
+- **Severity**: Critical
 - **Description**: Compara la implementación actual de la página web contra el diseño original para identificar discrepancias visuales y estructurales.
 - **Design Reference**: {Pencil slide name or Figma frame URL from Screen Identification}
-- **Preconditions**: La página está cargada en `BASE_URL + route` y el diseño de referencia es accesible.
+- **Preconditions**: La página está cargada en `<<view-id>>` (resuelto por el ejecutor como `{{BASE_URL}}` + route) y el diseño de referencia es accesible.
 - **Steps**:
-  1. Navegar a `BASE_URL + route`
+  1. Navegar a `<<view-id>>`
   2. Capturar screenshot completo de la página actual
   3. Obtener el diseño de referencia usando Figma MCP o Pencil MCP según corresponda
   4. Comparar estructura de componentes (presencia, orden, jerarquía)
@@ -339,7 +358,7 @@ After executing this test case, the report must include a dedicated section:
 ### Referencia de Diseño
 
 - **Fuente**: {Figma frame URL or Pencil slide name}
-- **Fecha de comparación**: {YYYY-MM-DD}
+- **Fecha de comparación**: {timestamp de reporte, p. ej. 2026-07-03 14:32:05 — obtenido según lo definido en el skill de test-execution}
 
 ### Resumen de Discrepancias
 
@@ -376,3 +395,41 @@ After executing this test case, the report must include a dedicated section:
 | **Cosmética** | Diferencias mínimas apenas perceptibles (1-2px, tonos muy similares)                      |
 
 > If the **Pencil slide name / Figma frame URL** field is empty, "N/A", or "Not provided", do NOT generate the Design Comparison test case.
+
+---
+
+### Rule 7 — Never Hardcode the Base URL
+
+Test cases and test data must never contain a resolved domain or hostname (e.g. `https://app.example.com`). Full URLs are always referenced symbolically so the same generated artifacts run unmodified against any environment defined in `vars.md` — switching environments never requires regenerating test cases.
+
+- When navigating to a view defined in the spec, reference it with `<<view-id>>` — the test-execution skill resolves it to `{{BASE_URL}}` + that view's Route at execution time.
+- When a URL isn't backed by a spec'd view (an ad-hoc or external path), write it literally as `{{BASE_URL}}` + the path, e.g. `{{BASE_URL}}/reset-password?token=${token}`.
+- Never write the concrete value of `BASE_URL` (or any other `vars.md` variable) into `test-cases.md` or `test-data.md`. Only the test-execution skill reads the concrete value, and only at run time.
+
+**Correct:**
+
+```
+Preconditions: The user navigates to <<login-screen-f3a9c1b2>>.
+```
+
+**Incorrect:**
+
+```
+Preconditions: The user navigates to https://app.example.com/login.
+```
+
+---
+
+### Rule 8 — Assign a Severity to Every Test Case
+
+Every test case must carry a `Severity` of **Critical**, **Mid**, or **Low**, judged by business impact — not derived mechanically from `Type`. Two Happy Path tests can have different severities if one guards a core flow and the other guards a secondary one.
+
+| Severity | Criteria |
+| --- | --- |
+| **Critical** | The happy path, smoke checks, or a business rule whose failure blocks the view's core function. |
+| **Mid** | Standard functional behavior, field validations, or a business rule that degrades but doesn't block usage. |
+| **Low** | Edge cases, boundary conditions, or exploratory/unusual scenarios unlikely to affect typical usage. |
+
+Design Comparison test cases are always **Critical** — a visual regression against an approved design is release-blocking by default.
+
+This field feeds the test-execution roughness gate: a run can be scoped to only Critical tests, Critical + Mid, or everything, without needing to regenerate test cases.

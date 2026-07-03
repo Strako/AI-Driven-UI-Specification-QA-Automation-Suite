@@ -1,6 +1,17 @@
 {
   "description": "AI-Driven UI Specification QA Automation Suite pipeline hooks",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/pipeline-on-execution-dispatch.sh\""
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write",

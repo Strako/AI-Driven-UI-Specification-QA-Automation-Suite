@@ -36,6 +36,17 @@ Always use **headed** mode. No need to ask the user.
 ### 3. Operating mode
 Infer from the message. Default to **Full Pipeline** if ambiguous.
 
+### 4. Execution level (optional)
+Parse the initiating message for an explicit test-execution roughness request. If found, remember it as `REQUESTED_EXECUTION_LEVEL` (`1`, `2`, or `3`) for the rest of the run — this skips the roughness question entirely at Stage 2, in both auto mode and interactive mode, because the user already told you what they want.
+
+| Phrase in the message | `REQUESTED_EXECUTION_LEVEL` |
+|---|---|
+| "critical only", "just critical", "just the critical tests" | `1` |
+| "critical and mid", "critical + mid" | `2` |
+| "all tests", "everything", "run everything", "full" | `3` |
+
+If nothing matches, leave `REQUESTED_EXECUTION_LEVEL` unset — it will be resolved right before Stage 2 dispatches (see **Execution Roughness Gate** below).
+
 ### Confirm and Proceed
 
 Once all required inputs are known, print the confirmation block before dispatching any agents:
@@ -47,6 +58,7 @@ Once all required inputs are known, print the confirmation block before dispatch
 > | Spec | `{spec-file-path}` |
 > | Browser | headed |
 > | Pipeline mode | Full Pipeline / Generate Only / Execute Only |
+> | Execution level | {`REQUESTED_EXECUTION_LEVEL` label, or "to be determined before execution"} |
 >
 > Starting pipeline…
 
@@ -95,7 +107,7 @@ After Stage 1 completes successfully, **stop the pipeline** and inform the user:
 
 ### Stage 2 — Test Execution
 
-Once the user confirms, dispatch the **test-execution** sub-agent using the Agent tool with the following prompt:
+Dispatch the **test-execution** sub-agent using the Agent tool with the following prompt. If `REQUESTED_EXECUTION_LEVEL` is known (from Startup or from the Execution Roughness Gate below), include the `EXECUTION_LEVEL` line; otherwise omit it entirely from the first attempt:
 
 ```
 SPEC_FILE: {absolute-or-relative path to the spec file}
@@ -105,6 +117,7 @@ VARS_FILE: {project-root}/vars.md
 BROWSER_MODE: headed
 MCP_SERVER: playwright_headed
 PROJECT_ROOT: {absolute path to the project root}
+EXECUTION_LEVEL: {1|2|3 — omit this line entirely if not yet known}
 
 Execute all test cases using Playwright MCP headed server (mcp__playwright_headed__).
 Save screenshots in the same directory as the test cases file.
@@ -112,6 +125,26 @@ Follow your skill instructions exactly.
 ```
 
 Wait for the agent to complete and parse its `---EXECUTION-COMPLETE---` report block.
+
+---
+
+### Execution Roughness Gate
+
+A `PreToolUse` hook (`pipeline-on-execution-dispatch.sh`) inspects every attempt to dispatch test-execution. It reads the session's Claude Code permission mode, which you cannot see directly.
+
+- **If the dispatch succeeds** — either `REQUESTED_EXECUTION_LEVEL` was already set, or the session is in Claude Code's **auto** permission mode (which defaults to running all tests) — proceed normally to Stage 2 and wait for the result.
+- **If the dispatch is blocked** — the hook's feedback tells you the session is not in auto mode and no level was given. Do **not** retry immediately. Instead, ask the user directly, using the counts from test-generation's `SEVERITY_BREAKDOWN` (Stage 1's result) if available:
+
+  > **Before executing, how thorough should this run be?**
+  >
+  > **1** — Critical only ({N} tests) · **2** — Critical + Mid ({N} tests) · **3** — All ({N} tests)
+  >
+  > Reply with `1`, `2`, or `3`.
+
+  Wait for the user's reply. The `UserPromptSubmit` hook resolves it and injects an instruction once it recognizes a valid answer (`1`/`critical`, `2`/`critical and mid`, `3`/`all`, or the bare number). If the reply doesn't match any of those, ask again — do not guess.
+- Once resolved, retry the Stage 2 dispatch with `EXECUTION_LEVEL` set to the resolved value.
+
+This same gate applies to the **Execute Only Flow** below — the dispatch there goes through the identical hook.
 
 ---
 
@@ -126,7 +159,9 @@ After Stage 2 finishes, deliver the final summary:
 > | Test Generation | ✅ Done | `test-cases.md`, `test-data.md` |
 > | Test Execution | ✅ Done | `{report-path}` |
 >
-> **Results:** {PASSED} ✅ / {FAILED} ❌ / {BLOCKED} ⚠️ — Success rate: {X/Y (Z%)}
+> **Results:** {PASSED} ✅ / {FAILED} ❌ / {BLOCKED} ⚠️ / {SKIPPED} ⏭ — Success rate: {X/Y (Z%)}
+> **Execution level:** {1 — Critical only / 2 — Critical + Mid / 3 — All} — {SKIPPED} skipped
+> **Execution window:** {STARTED} – {COMPLETED}
 > **Report:** `{report-path}`
 
 ---
@@ -158,7 +193,7 @@ If either file is missing:
 > ❌ **Cannot execute** — `{missing-file}` not found.
 > Run the **Generate Only** or **Full Pipeline** mode first to create it.
 
-If both exist, dispatch the **test-execution** sub-agent with the confirmed paths and browser mode (same prompt as Stage 2 above). Report completion.
+If both exist, dispatch the **test-execution** sub-agent with the confirmed paths and browser mode (same prompt as Stage 2 above, including `EXECUTION_LEVEL` if `REQUESTED_EXECUTION_LEVEL` was parsed at Startup). This dispatch goes through the same **Execution Roughness Gate** described under Stage 2 — if blocked, ask the roughness question before retrying. Report completion.
 
 ---
 
@@ -170,3 +205,4 @@ If both exist, dispatch the **test-execution** sub-agent with the confirmed path
 | Sub-agent failure | Report its last output and ask the user how to proceed. Do not retry automatically. |
 | test-cases.md or test-data.md missing in Execute Only mode | Stop. Inform the user and direct them to run generation first. |
 | User cancels at stage gate | Acknowledge. Remind them they can resume by replying when test-data.md is filled. |
+| Execution roughness reply doesn't match 1/2/3 | Ask again, restating the three options. Do not guess or default silently. |

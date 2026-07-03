@@ -54,6 +54,10 @@ BREAKDOWN:
   - Edge Cases: {N}
   - Exploratory: {N}
   - Design Comparison: {N — 0 if no design reference, 1 if present}
+SEVERITY_BREAKDOWN:
+  - Critical: {N}
+  - Mid: {N}
+  - Low: {N}
 RELATED_VIEWS_READ: {comma-separated list of related spec files read, or "none"}
 ASSUMPTIONS: {any assumptions made due to ambiguity, or "none"}
 ---GENERATION-END---

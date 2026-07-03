@@ -12,7 +12,8 @@ Before generating anything, read the following files in order:
 
 1. The UI screen specification file indicated by `SPEC_FILE` (or the file the user referenced).
 2. Every spec file listed under **Related Views → Spec File** in that specification. Read each one fully to understand its view ID, components, fields, validations, and flow.
-3. `vars.md` at the project root (resolved from `PROJECT_ROOT` if provided, or by searching for it via Glob). Extract the `BASE_URL` value — this is the domain prepended to every route when constructing full URLs in preconditions and navigation steps.
+
+> This skill never reads `BASE_URL` from `vars.md` and never resolves it into a concrete domain. Test cases reference views and URLs symbolically (`<<view-id>>` / `{{BASE_URL}}`) so the same `test-cases.md` can run against any environment without regeneration — the actual `BASE_URL` value is looked up only at execution time, by the test-execution skill.
 
 ---
 
@@ -32,8 +33,10 @@ All output must follow the conventions defined in `TEMPLATE.md`. Apply them exac
 
 **Full URL construction**
 
-- Construct full URLs in preconditions and navigation steps as: `BASE_URL` + `Route` from the spec.
-- Example: `BASE_URL=https://app.example.com` + `/login` → `https://app.example.com/login`.
+- Never write a resolved domain or hostname into a test case — `BASE_URL` must always stay symbolic.
+- When navigating to a view defined in the spec, reference it with its `<<view-id>>`. The test-execution skill resolves this to `{{BASE_URL}}` + that view's Route at run time.
+- When a navigation target isn't backed by a spec'd view (an ad-hoc or external path), write it literally as `{{BASE_URL}}` + the path, e.g. `{{BASE_URL}}/reset-password?token=${token}`.
+- Example: Route `/login` on `<<login-screen-f3a9c1b2>>` → reference it in the test case as `<<login-screen-f3a9c1b2>>`, never as `https://app.example.com/login`.
 
 ---
 
@@ -62,6 +65,8 @@ Specifically ensure coverage of:
 - For **External Service** entries: do not test the service directly; generate a test case that stubs or mocks it and asserts the expected behavior of the current view
 - **Design Comparison** (when applicable): if the `Pencil slide name / Figma frame URL` field in Screen Identification contains a valid reference (not empty, not "N/A", not "Not provided"), generate exactly one Design Comparison test case following Rule 6 in TEMPLATE.md. This test case instructs the executor to retrieve the design from Figma MCP or Pencil MCP and compare it against the live page, documenting all visual and structural discrepancies.
 
+Assign every test case a `Severity` of Critical, Mid, or Low following Rule 8 in TEMPLATE.md — judge it by business impact, not mechanically from `Type`. Design Comparison test cases are always Critical.
+
 ---
 
 ### Step 4 — Produce Artifact 1: test-cases.md
@@ -74,8 +79,9 @@ Write a file named `test-cases.md` in the same directory as the spec file, using
 ## [TC-001] (Title)
 
 - **Type**: Happy Path | Smoke | Functional | Edge Case | Exploratory | Design Comparison
+- **Severity**: Critical | Mid | Low (per Rule 8 in TEMPLATE.md — Design Comparison is always Critical)
 - **Description**: (One sentence describing what this test validates)
-- **Preconditions**: (Required state, session, data, or navigation before the test begins. Use <<view-id>> for views and ${field-name} for field values. Include the full URL when navigation is required. Omit this block if there are no preconditions.)
+- **Preconditions**: (Required state, session, data, or navigation before the test begins. Use <<view-id>> for views and ${field-name} for field values. For navigation, reference the destination as <<view-id>>, or as {{BASE_URL}} + path for ad-hoc paths not backed by a view — never write a resolved domain. Omit this block if there are no preconditions.)
 - **Steps**:
   1. (Action — use ${field-name} for every interaction, <<view-id>> for every navigation)
   2. (...)
@@ -125,7 +131,7 @@ Repeat for each test case that requires input data.
 
 Once both files are written, output the structured `---GENERATION-COMPLETE---` block as defined in the agent instructions, then provide a human-readable summary:
 
-- Path to `test-cases.md` and total number of test cases generated, broken down by type.
+- Path to `test-cases.md` and total number of test cases generated, broken down by type and by severity (Critical/Mid/Low).
 - Path to `test-data.md` and total number of scenarios included.
 - Any related view spec files that were read and incorporated into cross-view test cases.
 - Any assumptions made due to ambiguity in the spec (if any).

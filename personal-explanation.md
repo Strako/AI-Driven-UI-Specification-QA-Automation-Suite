@@ -101,6 +101,7 @@ flowchart TD
         subgraph TEST_GEN["Test Generation"]
             TG[/"test-generation\nAgent Sonnet"/]
             TG -->|"Reads"| SKILL_TG["test-generation:process\nSKILL.md"]
+            TG -->|"Assigns Severity\n(Critical/Mid/Low)"| TC
             TG -->|"Write"| TC["test-cases.md"]
             TG -->|"Write"| TD["test-data.md"]
         end
@@ -113,11 +114,19 @@ flowchart TD
     USER_FILL -->|"done / ready"| HOOK_PROMPT["pipeline-on-user-prompt.sh"]
     HOOK_PROMPT -->|"State: TEST_DATA_READY"| QAC
 
-    QAC -->|"Dispatch sub-agent"| TE
+    QAC -->|"Attempts dispatch"| HOOK_GATE{"PreToolUse:\npipeline-on-execution-dispatch.sh"}
+    HOOK_GATE -->|"auto mode, or\nEXECUTION_LEVEL known"| TE
+    HOOK_GATE -->|"blocked: not auto mode,\nno level yet"| ASK_LEVEL(["qa-coordinator asks:\n1 Critical / 2 Critical+Mid / 3 All"])
+    ASK_LEVEL --> HOOK_PROMPT
+    HOOK_PROMPT -->|"State: AWAITING_EXECUTION_LEVEL\n→ resolved → TEST_DATA_READY"| QAC
+    QAC -->|"Retry dispatch\nwith EXECUTION_LEVEL"| HOOK_GATE
 
     subgraph TEST_EXEC["STAGE 3 - Test Execution"]
         TE[/"test-execution\nAgent Sonnet"/]
         TE -->|"Reads"| SKILL_TE["test-execution:process\nSKILL.md"]
+        TE -->|"Filters by EXECUTION_LEVEL\nvs. Severity"| SKIP_FILTER{"Severity meets\nlevel?"}
+        SKIP_FILTER -->|"no"| SKIPPED_TC(["⏭ SKIPPED\n(never executed)"])
+        SKIP_FILTER -->|"yes"| PW2
         TE -->|"MCP Tool Calls"| PW2["Playwright MCP headed"]
         TE -->|"Design Comparison"| DESIGN_MCP{"Design Reference?"}
         DESIGN_MCP -->|"Figma URL"| FIGMA_MCP["Figma MCP"]
@@ -187,7 +196,7 @@ tools: Read, Glob, Agent(test-generation, test-execution)
 ---
 ```
 
-The `Agent(test-generation, test-execution)` field is what permits this agent to invoke those two as sub-agents. Sub-agents are started by the orchestrator using the Agent tool — each runs in its own isolated context and returns a result.
+The `Agent(test-generation, test-execution)` field is what permits this agent to invoke those two as sub-agents. Sub-agents are started by the orchestrator using the Agent tool — each runs in its own isolated context and returns a result. This means the orchestrator cannot pause a dispatched sub-agent mid-run to ask the human a question — only the orchestrator itself (a live, turn-by-turn conversation) can do that. `pipeline-on-execution-dispatch.sh` exploits the one place this constraint can still be worked around: a `PreToolUse` hook fires on the Agent-tool call itself, *before* the sub-agent starts, so it can block the call and hand the orchestrator a reason to ask first — see the [Execution Roughness Gate example](#example-from-this-project--pipeline-on-execution-dispatchsh-pretooluse-blocking) below.
 
 ### How agents are invoked
 
@@ -307,7 +316,7 @@ The commands use project-relative paths (`.claude/hooks/...`), which works in an
 |---|---|---|
 | `SessionStart` | Session start or resume | `startup`, `resume`, `clear`, `compact` |
 | `UserPromptSubmit` | When the user sends a message | (no matcher) |
-| `PreToolUse` | Before a tool executes | Tool name: `Bash`, `Edit\|Write`, `mcp__.*` |
+| `PreToolUse` | Before a tool executes | Tool name: `Bash`, `Edit\|Write`, `mcp__.*`, `Agent` |
 | `PostToolUse` | After a tool executes | Tool name |
 | `PermissionRequest` | When a permission dialog appears | Tool name |
 | `Stop` | When Claude finishes responding | (no matcher) |
@@ -324,7 +333,7 @@ The commands use project-relative paths (`.claude/hooks/...`), which works in an
 
 ### Hook portability — how the scripts resolve paths
 
-All four hooks in this plugin use the same pattern to find the project root without hardcoding any paths:
+The five hooks in this plugin resolve the project root without hardcoding any paths, using one of two equivalent patterns:
 
 ```bash
 #!/bin/bash
@@ -333,7 +342,7 @@ PROJECT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 STATE_FILE="$PROJECT/.claude/.pipeline-state"
 ```
 
-Because hooks are always installed at `.claude/hooks/`, `$SCRIPT_DIR` resolves to `<project>/.claude/hooks` and `$PROJECT` resolves two levels up to the project root. This makes every hook fully portable — the same script works correctly in any project.
+Because hooks are always installed at `.claude/hooks/`, `$SCRIPT_DIR` resolves to `<project>/.claude/hooks` and `$PROJECT` resolves two levels up to the project root. `pipeline-on-spec-created.sh` uses this form. The other four (`pipeline-on-tests-generated.sh`, `pipeline-on-report-written.sh`, `pipeline-on-user-prompt.sh`, `pipeline-on-execution-dispatch.sh`) rely on `PROJECT="${PWD}"` instead — equally portable here since Claude Code always runs hooks with the project root as the working directory. Either way, the same script works correctly in any project.
 
 ### Example — `pipeline-on-spec-created.sh`
 
@@ -428,6 +437,24 @@ fi
 
 exit 0  # EXIT 0 = ALLOW
 ```
+
+### Example from this project — `pipeline-on-execution-dispatch.sh` (PreToolUse, blocking)
+
+This hook gates `qa-coordinator`'s attempt to dispatch `test-execution`. It is the only hook in this plugin that reads `permission_mode` — that field is only present in `PreToolUse` payloads, not in `PostToolUse` or `UserPromptSubmit` ones, and **not at all** in `SubagentStart` (which also cannot block — exit code 2 there only prints a warning, the sub-agent spawns regardless). This is why the gate lives here instead of on `SubagentStart`, even though conceptually it's about "the test-execution stage starting":
+
+```bash
+PERMISSION_MODE=$(echo "$INPUT" | python3 -c \
+  "import sys,json; print(json.load(sys.stdin).get('permission_mode',''))")
+
+[[ "$PERMISSION_MODE" == "auto" ]] && exit 0   # auto mode: let it run everything
+
+# Not auto mode and no EXECUTION_LEVEL yet — block and tell qa-coordinator to ask.
+printf "AWAITING_EXECUTION_LEVEL\n%s\n%s\n" "$MODULE" "$MODULE_DIR" > "$STATE_FILE"
+echo "Ask the user: 1 Critical / 2 Critical+Mid / 3 All, then retry with EXECUTION_LEVEL set." >&2
+exit 2
+```
+
+`qa-coordinator` itself never sees `permission_mode` directly — the hook is the only thing that can, and it hands the decision back as plain-English feedback the agent then acts on conversationally, the same way it already reacts to the `test-data.md` pause instructions.
 
 ---
 
@@ -530,11 +557,15 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │   │
        │   ├── [AGENT dispatches] test-generation (sub-agent)
        │   │   ├── [SKILL] Reads .claude/skills/test-generation:process/SKILL.md
-       │   │   ├── [AGENT] Reads spec + vars.md, generates test cases
+       │   │   ├── [AGENT] Reads spec (never vars.md), generates test cases
+       │   │   │   └── Navigation stays symbolic: <<view-id>> / {{BASE_URL}} — BASE_URL
+       │   │   │       is never resolved here, so the same file works in any environment
+       │   │   ├── [AGENT] Assigns Severity (Critical/Mid/Low) to every test case
        │   │   ├── [AGENT] Write → test-cases.md
        │   │   │   └── [HOOK fires] pipeline-on-tests-generated.sh
        │   │   │       └── State → GENERATION_COMPLETE
        │   │   └── [AGENT] Write → test-data.md
+       │   │       └── Reports SEVERITY_BREAKDOWN (Critical/Mid/Low counts) in its summary
        │   │
        │   ├── [AGENT] qa-coordinator PAUSES
        │   │   └── "Fill test-data.md and confirm when ready"
@@ -546,18 +577,43 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │   │       └── stdout: "Dispatch test-execution agent"
        │   │           (this text is injected into Claude's context)
        │   │
+       │   ├── [AGENT attempts dispatch] test-execution (sub-agent)
+       │   │   └── [HOOK fires] pipeline-on-execution-dispatch.sh (PreToolUse)
+       │   │       ├── Reads permission_mode from the hook payload
+       │   │       ├── auto mode, or EXECUTION_LEVEL already in the prompt → exit 0, dispatch proceeds
+       │   │       └── otherwise → State → AWAITING_EXECUTION_LEVEL, exit 2 (BLOCKED)
+       │   │           │
+       │   │           ├── [AGENT] qa-coordinator asks: "1 Critical / 2 Critical+Mid / 3 All"
+       │   │           │
+       │   │           └── USER → "2"
+       │   │               └── [HOOK fires] pipeline-on-user-prompt.sh
+       │   │                   └── State = AWAITING_EXECUTION_LEVEL + "2" detected
+       │   │                   └── State → TEST_DATA_READY
+       │   │                   └── stdout: "Retry dispatch with EXECUTION_LEVEL = 2"
+       │   │                       (agent retries the Agent-tool call — hook now allows it through)
+       │   │
        │   └── [AGENT dispatches] test-execution (sub-agent)
        │       ├── [SKILL] Reads .claude/skills/test-execution:process/SKILL.md
-       │       ├── [AGENT] Hydrates test cases with test data
-       │       ├── [AGENT] Executes each test via Playwright MCP
-       │       │   └── navigate → snapshot → type → click → screenshot
+       │       ├── [AGENT] Reads vars.md → this is the ONLY step in the pipeline
+       │       │   where BASE_URL is resolved into a concrete domain
+       │       ├── [AGENT] Captures EXECUTION_STARTED timestamp via
+       │       │   mcp__playwright_headed__browser_evaluate (no Bash/date available)
+       │       ├── [AGENT] Hydrates test cases — ${field-name} → test data value,
+       │       │   <<view-id>> / {{BASE_URL}} → real URL from vars.md
+       │       ├── [AGENT] Filters by EXECUTION_LEVEL vs. each case's Severity
+       │       │   └── Excluded cases marked ⏭ SKIPPED — never executed
+       │       ├── [AGENT] Executes each remaining test via Playwright MCP
+       │       │   └── navigate → snapshot → type → click → timestamped screenshot
+       │       │       (captured for both ✅ PASS and ❌ FAIL; ⚠️ BLOCKED/⏭ SKIPPED have none)
        │       ├── [AGENT] Design Comparison (if TC-DC exists):
        │       │   ├── Figma URL → uses Figma MCP to retrieve design
        │       │   └── Pencil name → uses Pencil MCP to retrieve design
+       │       ├── [AGENT] Captures EXECUTION_COMPLETED timestamp
        │       ├── [AGENT] Write → test-report-dashboard.md
+       │       │   │        (includes execution level, skipped tests, execution window)
        │       │   └── [HOOK fires] pipeline-on-report-written.sh
        │       │       └── State → EXECUTION_COMPLETE
-       │       └── [AGENT] Write → TC-*.png (screenshots)
+       │       └── [AGENT] Write → TC-*-{timestamp}.png (screenshots)
        │
        └── [AGENT] qa-coordinator delivers final report
            └── "✅ QA Pipeline Complete"
@@ -584,7 +640,14 @@ stateDiagram-v2
     WIZARD_COMPLETE --> GENERATION_COMPLETE : test-generation writes test-cases.md
     PIPELINE_OFFER_REQUESTED --> GENERATION_COMPLETE : test-generation writes test-cases.md
     GENERATION_COMPLETE --> TEST_DATA_READY : user says "done" / "ready"
-    TEST_DATA_READY --> EXECUTION_COMPLETE : test-execution writes test-report
+    TEST_DATA_READY --> EXECUTION_DISPATCH_ATTEMPTED : qa-coordinator attempts Agent-tool dispatch
+    note right of EXECUTION_DISPATCH_ATTEMPTED
+        pipeline-on-execution-dispatch.sh (PreToolUse) checks permission_mode.
+        Not a .pipeline-state entry — it's the moment the dispatch is attempted.
+    end note
+    EXECUTION_DISPATCH_ATTEMPTED --> EXECUTION_COMPLETE : auto mode, or EXECUTION_LEVEL already known — dispatch allowed, test-execution writes test-report
+    EXECUTION_DISPATCH_ATTEMPTED --> AWAITING_EXECUTION_LEVEL : not auto mode, no level yet — dispatch blocked (exit 2)
+    AWAITING_EXECUTION_LEVEL --> TEST_DATA_READY : user answers 1 / 2 / 3 — retry dispatch with EXECUTION_LEVEL set
     EXECUTION_COMPLETE --> [*]
 ```
 
@@ -623,6 +686,8 @@ stateDiagram-v2
 ## 7. Design Comparison — How It Works
 
 Design comparison is an optional feature that compares the live web page against the original design (Figma or Pencil) and produces a discrepancy report.
+
+> **Two different "severities" exist in this system — don't conflate them.** A test case's `Severity` (Critical/Mid/Low, assigned by `test-generation`) drives the execution roughness gate below. A discrepancy's severity (Critical/Major/Minor/Cosmetic, assigned by `test-execution` during design comparison) only classifies visual differences within the DESIGN COMPARISON report section. A Design Comparison test case is always test-case-`Severity` Critical, regardless of how many or how few discrepancy-severity issues it finds.
 
 ```
 1. User provides a "Design Reference" when creating the spec

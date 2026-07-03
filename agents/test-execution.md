@@ -89,6 +89,7 @@ You receive these inputs in your initial prompt (from qa-coordinator or from the
 | `TEST_DATA_FILE`  | Path to `test-data.md`                                           |
 | `VARS_FILE`       | Path to `vars.md` (contains `BASE_URL`)                          |
 | `PROJECT_ROOT`    | Absolute path to the project root                                |
+| `EXECUTION_LEVEL` | Optional. `1` = Critical only, `2` = Critical + Mid, `3` = All. Defaults to `3` (All) if absent — e.g. when invoked directly without going through qa-coordinator's roughness gate. |
 
 ---
 
@@ -104,8 +105,12 @@ TOTAL: {total test cases executed}
 PASSED: {N}
 FAILED: {N}
 BLOCKED: {N}
+SKIPPED: {N}
+EXECUTION_LEVEL: {1|2|3}
 SUCCESS_RATE: {X/Y (Z%)}
 SCREENSHOTS: {N}
+STARTED: {EXECUTION_STARTED report timestamp}
+COMPLETED: {EXECUTION_COMPLETED report timestamp}
 ---EXECUTION-END---
 ```
 

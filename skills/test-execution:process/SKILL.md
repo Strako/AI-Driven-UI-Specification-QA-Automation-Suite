@@ -23,21 +23,37 @@ Never use `mcp__playwright__` (headless). Never mix prefixes mid-execution.
 
 Read the following files **in order** before executing anything:
 
-1. **Test cases file** — the path from `TEST_CASES_FILE`. Parse every test case extracting: ID, Type, Description, Preconditions, Steps, and Expected Result.
+1. **Test cases file** — the path from `TEST_CASES_FILE`. Parse every test case extracting: ID, Type, Severity, Description, Preconditions, Steps, and Expected Result.
 2. **Test data file** — the path from `TEST_DATA_FILE`. For each TC ID, extract the concrete values that replace `${field-name}` placeholders.
-3. **`vars.md`** — the path from `VARS_FILE`. Extract the `BASE_URL` value and any authentication credential variables (e.g. `AUTH_EMAIL`, `AUTH_PASSWORD`, or any custom variable names). These credential values are used when test preconditions require authentication.
+3. **`vars.md`** — the path from `VARS_FILE`. Extract the `BASE_URL` value and any authentication credential variables (e.g. `AUTH_EMAIL`, `AUTH_PASSWORD`, or any custom variable names). `BASE_URL` is used to resolve every `<<view-id>>` and every literal `{{BASE_URL}}` token found in the test cases into a real URL — this is the only step in the whole pipeline where `BASE_URL` is resolved to its concrete value, which is what lets the same test cases run against any environment just by editing `vars.md`. Credential values are used when test preconditions require authentication.
 4. **UI spec file** — the path from `SPEC_FILE` (if present). Read it to understand `<<view-id>>`, component structure, field types, and validation messages — this helps locate elements in the DOM.
+5. **`EXECUTION_LEVEL`** — from your input contract, not a file. Defaults to `3` (All) if not provided. Used in Step 2a to decide which test cases actually run.
 
 ---
 
 ### Step 2 — Hydrate test cases with test data
 
-For every test case that has a matching entry in the test data file:
+For every test case:
 
-- Replace each `${field-name}` placeholder in Steps and Preconditions with the concrete value from the test data.
-- Replace each `<<view-id>>` with the corresponding URL constructed as `BASE_URL` + route from the spec.
-- Keep the original TC ID, Type, and Description unchanged.
+- Replace each `${field-name}` placeholder in Steps and Preconditions with the concrete value from the test data (for test cases that have a matching entry in the test data file).
+- Replace each `<<view-id>>` with the corresponding URL, constructed as the `BASE_URL` value read from `vars.md` + that view's Route from the spec.
+- Replace every literal `{{BASE_URL}}` token with the `BASE_URL` value read from `vars.md` in Step 1.
+- Keep the original TC ID, Type, Severity, and Description unchanged.
 - If a test case has **no matching test data entry** and its steps require input values, mark it as `⚠️ BLOCKED` with reason: "No test data defined for this case".
+
+---
+
+### Step 2a — Filter by execution level
+
+Before executing anything, partition all hydrated test cases by `Severity` according to `EXECUTION_LEVEL` (Step 1):
+
+| `EXECUTION_LEVEL` | Test cases that run |
+| --- | --- |
+| `1` | Severity = Critical only |
+| `2` | Severity = Critical or Mid |
+| `3` (default) | Every test case, regardless of severity |
+
+Every test case excluded by this filter is marked `⏭ SKIPPED` with reason `"Below configured execution level ({EXECUTION_LEVEL})"` and is **never executed** — no navigation, no screenshot, no Playwright MCP calls of any kind for it, exactly like a `⚠️ BLOCKED` case today. This filtering happens once, before Step 3 begins, and applies independently of test data availability — a test case can be `⏭ SKIPPED` even if it would otherwise have had valid test data.
 
 ---
 
@@ -45,11 +61,34 @@ For every test case that has a matching entry in the test data file:
 
 Execute each test case sequentially using the Playwright MCP tools. Follow these rules strictly.
 
+#### 3.0 — Timestamps
+
+There is no clock available outside the browser page (no `Bash`, no `date` command). Every timestamp used in evidence filenames and in the report **must** be obtained by calling `mcp__playwright_headed__browser_evaluate` with a JS expression evaluated in the page context. Use these two exact forms:
+
+- **Filename timestamp** — compact, filesystem-safe, no spaces or colons:
+  ```js
+  () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
+  ```
+  Produces e.g. `20260703-143205`.
+
+- **Report timestamp** — human-readable, used inside the report:
+  ```js
+  () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
+  ```
+  Produces e.g. `2026-07-03 14:32:05`.
+
+Capture two **report timestamps**:
+
+- **`EXECUTION_STARTED`** — immediately before executing the first test case.
+- **`EXECUTION_COMPLETED`** — immediately after executing the last test case (before writing the report).
+
+Both values are used in Step 4 (report header and Executive Summary).
+
 #### 3.1 — Execution rules
 
-- Execute **every** test case. Do not skip any without marking it BLOCKED.
+- Execute **every** test case that was not filtered out in Step 2a. Do not skip any of the remaining ones without marking it BLOCKED.
 - Follow the steps **exactly** as defined. Do not modify, assume, or extend scenarios.
-- Before each test case, navigate to the required URL from the preconditions using `BASE_URL` + route.
+- Before each test case, navigate to the required URL already resolved in Step 2 (from the `<<view-id>>` or `{{BASE_URL}}` tokens in the preconditions).
 - For each step, call the appropriate Playwright MCP tool (prefix: `mcp__playwright_headed__`):
   - **Navigate**: `mcp__playwright_headed__browser_navigate`
   - **Get DOM state / element refs**: `mcp__playwright_headed__browser_snapshot` — always call this before click/type to identify the current element `ref=` values
@@ -65,16 +104,22 @@ Execute each test case sequentially using the Playwright MCP tools. Follow these
 
 #### 3.2 — Evidence capture
 
-- Take a **screenshot** at the end of every test case execution using `mcp__playwright_headed__browser_take_screenshot`.
-- For **failed** test cases, take an additional screenshot at the exact step where the failure occurred.
-- Name screenshots using the pattern: `{TC-ID}-{short-description}.png` (e.g. `TC-SMK-01-page-loaded.png`).
+> ⛔ **Evidence is mandatory for every test case regardless of outcome.** Capture a screenshot whether the result is ✅ PASS or ❌ FAIL. Never skip evidence capture because a test passed — a passing result without a screenshot is not verifiable.
+
+- Take a **screenshot** at the end of every test case execution using `mcp__playwright_headed__browser_take_screenshot`:
+  - For ✅ **PASS** results, this screenshot is the proof of the successful end state.
+  - For ❌ **FAIL** results, this screenshot is the proof of the failing end state.
+- For **failed** test cases, take an additional screenshot at the exact step where the failure occurred (obtain a fresh filename timestamp for it — do not reuse the end-of-test one).
+- ⚠️ **BLOCKED** test cases have no evidence to capture, since they never execute — record the reason instead (Step 3.4).
+- Before capturing each screenshot, obtain a **filename timestamp** as defined in Step 3.0.
+- Name screenshots using the pattern: `{TC-ID}-{short-description}-{filename-timestamp}.png` (e.g. `TC-SMK-01-page-loaded-20260703-143205.png`, and for a failure step `TC-SMK-01-failure-step-20260703-143207.png`).
 - Save all screenshots in the same directory as the test cases file.
 
 #### 3.3 — Design Comparison execution (TC-DC type)
 
 When executing a test case of type **Design Comparison** (ID prefix `TC-DC`):
 
-1. **Navigate** to the page URL and take a full-page screenshot using `mcp__playwright_headed__browser_take_screenshot`.
+1. **Navigate** to the page URL and take a full-page screenshot using `mcp__playwright_headed__browser_take_screenshot`, named using the same `{TC-ID}-{short-description}-{filename-timestamp}.png` pattern from Step 3.2 (filename timestamp obtained as defined in Step 3.0).
 2. **Retrieve the design reference** from the spec's `Pencil slide name / Figma frame URL` field:
    - **If it's a Figma URL** (contains `figma.com`): Use the **Figma MCP** tools to fetch the design frame. Extract the node ID from the URL and retrieve the frame's visual structure including components, layout, colors, typography, spacing, and hierarchy.
    - **If it's a Pencil slide name** (does not contain `figma.com`): Use the **Pencil MCP** tools to read the `.pen` file, locate the frame/slide by name using `batch_get` with a name pattern search, and extract its visual structure including components, layout, colors, typography, spacing, and hierarchy.
@@ -108,6 +153,7 @@ Classify each test case result as:
 | PASS    | ✅    | All steps completed and expected result matches observed behavior        |
 | FAIL    | ❌    | One or more steps did not produce the expected result                    |
 | BLOCKED | ⚠️    | Test cannot be executed due to environment, data, or tooling limitations |
+| SKIPPED | ⏭    | Excluded by the configured `EXECUTION_LEVEL` (Step 2a) — never executed  |
 
 For **FAIL** results, record:
 
@@ -120,6 +166,10 @@ For **FAIL** results, record:
 For **BLOCKED** results, record:
 
 - The **reason** why the test could not be executed
+
+For **SKIPPED** results, record:
+
+- The **reason**: `"Below configured execution level ({EXECUTION_LEVEL})"`
 
 ---
 
@@ -137,7 +187,7 @@ The report **MUST** follow this exact structure. No sections may be omitted, ren
 # Test Execution Report — {Module name}
 
 **URL:** `{full URL from BASE_URL + route}`
-**Date:** {YYYY-MM-DD}
+**Date:** {EXECUTION_STARTED report timestamp, e.g. 2026-07-03 14:32:05}
 **Executed with:** Playwright MCP — server `playwright_headed` (MCP tool, not Node.js code)
 
 ---
@@ -145,22 +195,26 @@ The report **MUST** follow this exact structure. No sections may be omitted, ren
 
 #### 4.2 — Executive Summary
 
-A summary table with one row per test type and a TOTAL row. Calculate and display the success rate.
+A summary table with one row per test type and a TOTAL row. Calculate and display the success rate over **executed** test cases only (Total minus Skipped) — a `⏭ SKIPPED` case was never run, so it must not count against the success rate either way. Always include the execution timestamps captured in Step 3.0 and the `EXECUTION_LEVEL` used.
 
 ```markdown
 ## Executive Summary
 
-| Category          | Total | ✅ Passed | ❌ Failed | ⚠️ Blocked |
-| ----------------- | ----- | --------- | --------- | ---------- |
-| Smoke Tests       | N     | N         | N         | N          |
-| Happy Path        | N     | N         | N         | N          |
-| Functional Tests  | N     | N         | N         | N          |
-| Edge Cases        | N     | N         | N         | N          |
-| Exploratory Tests | N     | N         | N         | N          |
-| Design Comparison | N     | N         | N         | N          |
-| **TOTAL**         | **N** | **N**     | **N**     | **N**      |
+**Execution started:** {EXECUTION_STARTED report timestamp}
+**Execution completed:** {EXECUTION_COMPLETED report timestamp}
+**Execution level:** {1 — Critical only / 2 — Critical + Mid / 3 — All}
 
-**Success rate: X/Y (Z%)**
+| Category          | Total | ✅ Passed | ❌ Failed | ⚠️ Blocked | ⏭ Skipped |
+| ----------------- | ----- | --------- | --------- | ---------- | ---------- |
+| Smoke Tests       | N     | N         | N         | N          | N          |
+| Happy Path        | N     | N         | N         | N          | N          |
+| Functional Tests  | N     | N         | N         | N          | N          |
+| Edge Cases        | N     | N         | N         | N          | N          |
+| Exploratory Tests | N     | N         | N         | N          | N          |
+| Design Comparison | N     | N         | N         | N          | N          |
+| **TOTAL**         | **N** | **N**     | **N**     | **N**      | **N**      |
+
+**Success rate: X/Y (Z%)** — Y excludes skipped test cases
 
 ---
 ```
@@ -180,16 +234,17 @@ Always create the following five sections, even if all tests pass:
 
 Each section must:
 
-- Show a summary line: `(X/Y ✅)` if all pass, or `(X/Y — N failed)` if any failed.
+- Show a summary line: `(X/Y ✅)` if all executed tests pass, `(X/Y — N failed)` if any failed, appending `, Z ⏭ skipped` whenever this section has any skipped test case — e.g. `(X/Y ✅, Z ⏭ skipped)`. `Y` here is the executed count (Total minus Skipped for this section).
 - Include a table with columns: `| ID | Description | Result | Detail |`
-- The **Detail** column must explain what was validated and what occurred — clear, concise, and verifiable.
+- The **Detail** column must explain what was validated and what occurred — clear, concise, and verifiable. For a `⏭ SKIPPED` row, the Detail column states the reason from Step 3.4.
 
 ```markdown
-## SMOKE TESTS (X/Y ✅)
+## SMOKE TESTS (X/Y ✅, Z ⏭ skipped)
 
-| ID        | Description | Result  | Detail                         |
-| --------- | ----------- | ------- | ------------------------------ |
-| TC-SMK-01 | Description | ✅ PASS | What was verified and observed |
+| ID        | Description | Result     | Detail                                      |
+| --------- | ----------- | ---------- | -------------------------------------------- |
+| TC-SMK-01 | Description | ✅ PASS    | What was verified and observed               |
+| TC-SMK-02 | Description | ⏭ SKIPPED | Below configured execution level (1)         |
 ```
 
 #### 4.4 — Failure Details
@@ -220,7 +275,20 @@ Include **only** if there are blocked tests:
 **Reason:** {Clear explanation of why the test could not be executed}
 ```
 
-#### 4.6 — Captured Screenshots
+#### 4.6 — Skipped Tests Details
+
+Include **only** if any test case was skipped (`EXECUTION_LEVEL` < 3 excluded it):
+
+```markdown
+## Skipped Tests Details
+
+### {ID} — {Test name}
+
+**Severity:** {Critical | Mid | Low}
+**Reason:** Below configured execution level ({EXECUTION_LEVEL})
+```
+
+#### 4.7 — Captured Screenshots
 
 Always include — list all captured screenshots:
 
@@ -232,7 +300,7 @@ Always include — list all captured screenshots:
 | `filename.png` | Description of what the screenshot shows |
 ```
 
-#### 4.7 — Design Comparison (include only if a TC-DC test case was executed)
+#### 4.8 — Design Comparison (include only if a TC-DC test case was executed)
 
 ```markdown
 ## DESIGN COMPARISON
@@ -240,7 +308,7 @@ Always include — list all captured screenshots:
 ### Design Reference
 
 - **Source**: {Figma frame URL or Pencil slide name}
-- **Comparison date**: {YYYY-MM-DD}
+- **Comparison date**: {report timestamp obtained as defined in Step 3.0, e.g. 2026-07-03 14:32:05}
 
 ### Discrepancy Summary
 
@@ -281,9 +349,11 @@ The report **MUST** comply with these rules:
 
 - Maintain titles, subtitles, and separators (`---`) exactly as shown.
 - Use Markdown tables with correct alignment.
-- Use status emojis consistently: ✅ PASS, ❌ FAIL, ⚠️ BLOCKED.
+- Use status emojis consistently: ✅ PASS, ❌ FAIL, ⚠️ BLOCKED, ⏭ SKIPPED.
 - Keep section names in UPPERCASE where specified.
-- Include aggregate metrics (totals, success rate).
+- Include aggregate metrics (totals, success rate — computed over executed test cases only, excluding skipped ones).
+- Include the `EXECUTION_STARTED` / `EXECUTION_COMPLETED` report timestamps (Step 3.0) in the header and Executive Summary, and a filename timestamp on every captured screenshot (Step 3.2). Never omit them.
+- Include the `EXECUTION_LEVEL` used (Step 2a) in the Executive Summary, and never silently drop a skipped test case from its section table or from **Skipped Tests Details** (4.6).
 - Write in **technical English**.
 - TC IDs must follow the format from the test cases file (e.g. `TC-SMK-01`, `TC-HP-01`, `TC-001`).
 - Descriptions must be clear, concise, and verifiable.
@@ -299,7 +369,9 @@ The report **MUST** comply with these rules:
 Once the report is written, output the structured `---EXECUTION-COMPLETE---` block as defined in the agent instructions, then provide a human-readable summary:
 
 - Path to the generated report file.
-- Total test cases executed, broken down by result (✅, ❌, ⚠️).
-- Success rate percentage.
+- Total test cases executed, broken down by result (✅, ❌, ⚠️, ⏭).
+- Success rate percentage (over executed test cases only).
+- Execution level used (`EXECUTION_LEVEL`, Step 2a) and how many test cases were skipped because of it.
+- Execution window (`EXECUTION_STARTED` – `EXECUTION_COMPLETED`, from Step 3.0).
 - Number of screenshots captured.
 - Key findings or issues discovered during execution (if any).

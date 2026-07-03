@@ -88,6 +88,8 @@ Generate a token from: Figma → Settings → Personal access tokens.
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+> Between Step 3 and Step 4, an optional **Step 4.5 — Execution Roughness Gate** may pause the pipeline to ask how much of the suite to run — skipped when you're in Claude Code's auto permission mode or you already stated a level.
+
 ---
 
 ## Step 1 — Auto-Generate the Spec
@@ -346,13 +348,15 @@ If you reply **yes**, the `qa-coordinator` is dispatched and test generation beg
 
 ### What `test-generation` produces
 
-The agent reads your spec and `vars.md`, then writes two files:
+The agent reads your spec (and any related spec files), then writes two files:
 
 **`test-cases.md`** — complete, data-agnostic test cases
 
-Every interactive element is referenced as `${field-name}` — never a hardcoded value.
+Every interactive element is referenced as `${field-name}` and every navigation as `<<view-id>>` / `{{BASE_URL}}` — never a hardcoded value or domain. `test-generation` never reads `vars.md`; `BASE_URL` is only resolved later, by `test-execution`, so the same test cases run against any environment without regeneration.
 
 Coverage generated: **Happy Path · Smoke · Functional · Edge Cases · Exploratory**
+
+Every test case is also assigned a **Severity** — Critical, Mid, or Low — judged by business impact (the happy path and smoke checks are typically Critical; edge cases and exploratory scenarios are typically Low). This severity is what Step 4.5 uses to scope how much of the suite actually runs.
 
 **`test-data.md`** — empty template organized by scenario
 
@@ -373,6 +377,7 @@ After both files are written, the coordinator pauses:
 ✅ Stage 1 complete — Test cases generated.
 
   test-cases.md  → 24 cases (Smoke: 3, HP: 2, Functional: 9, Edge: 6, Exploratory: 4)
+                   Severity: 6 Critical, 15 Mid, 3 Low
   test-data.md   → 14 scenarios
 
 Before execution, fill in the test data:
@@ -419,7 +424,31 @@ When done, reply in Claude:
 Done, test data is filled.
 ```
 
-The pipeline hook detects your confirmation and automatically dispatches test execution.
+The pipeline hook detects your confirmation and automatically attempts to dispatch test execution.
+
+---
+
+## Step 4.5 — Execution Roughness Gate (conditional)
+
+Before test-execution actually starts, a hook checks whether your Claude Code session is running in **auto** permission mode.
+
+- **If you already stated a level** when you started the pipeline (e.g. "...just run the critical tests"), this step is skipped entirely — your choice is used, whether or not auto mode is on.
+- **If you're in auto mode** and said nothing, this step is also skipped — the pipeline defaults to running **all** test cases.
+- **Otherwise**, the dispatch is paused and you're asked directly:
+
+  ```
+  Before executing, how thorough should this run be?
+
+  1 — Critical only (6 tests)
+  2 — Critical + Mid (21 tests)
+  3 — All (24 tests)
+
+  Reply with 1, 2, or 3.
+  ```
+
+  Reply with the number (or a word like "critical", "critical and mid", "all"/"everything"). The hook resolves your answer and test-execution is dispatched again, this time scoped to that level. If your reply doesn't match any option, you'll be asked again — nothing is guessed on your behalf.
+
+Any test case excluded this way is **not** silently dropped — it shows up in the final report as `⏭ SKIPPED`, with the reason it was excluded (see Step 5 and Output Files below).
 
 ---
 
@@ -428,10 +457,12 @@ The pipeline hook detects your confirmation and automatically dispatches test ex
 The `test-execution` agent works through every test case sequentially:
 
 1. Reads `test-cases.md`, `test-data.md`, `vars.md`, and the spec file
-2. **Hydrates** each test case — replaces every `${field-name}` with the concrete value you filled in
-3. For each test case: navigates → snapshots DOM → fills inputs → clicks buttons → captures screenshot
-4. Classifies each result: **✅ PASS · ❌ FAIL · ⚠️ BLOCKED**
-5. Writes `Platform/Dashboard/test-report-dashboard.md`
+2. **Captures** an `EXECUTION_STARTED` timestamp — since the agent has no `Bash`/`date` access, every timestamp is obtained by calling `mcp__playwright_headed__browser_evaluate` to read the clock inside the browser page
+3. **Hydrates** each test case — replaces every `${field-name}` with the concrete value you filled in, and resolves every `<<view-id>>` / `{{BASE_URL}}` token into a real URL using the current `BASE_URL` from `vars.md`
+4. **Filters** by the `EXECUTION_LEVEL` resolved in Step 4.5 — test cases whose `Severity` falls below the chosen level are marked `⏭ SKIPPED` and never run
+5. For each remaining test case: navigates → snapshots DOM → fills inputs → clicks buttons → captures a timestamped screenshot — mandatory for **both** ✅ PASS and ❌ FAIL results (⚠️ BLOCKED cases never execute, so there's nothing to capture)
+6. Classifies each result: **✅ PASS · ❌ FAIL · ⚠️ BLOCKED · ⏭ SKIPPED**
+7. Captures an `EXECUTION_COMPLETED` timestamp and writes `Platform/Dashboard/test-report-dashboard.md`, including the execution level, the execution window (`EXECUTION_STARTED` – `EXECUTION_COMPLETED`), and a **Skipped Tests Details** section (if anything was skipped) in the report
 
 ### Design Comparison (TC-DC test cases)
 
@@ -459,8 +490,8 @@ Platform/Dashboard/
 ├── dashboard-analysis.png          ← screenshot from auto-generation analysis
 ├── test-cases.md                   ← generated test cases
 ├── test-data.md                    ← filled test data
-├── test-report-dashboard.md        ← execution report
-└── TC-*.png                        ← screenshot evidence per test
+├── test-report-dashboard.md        ← execution report (includes execution level, skipped tests, execution window)
+└── TC-*.png                        ← timestamped screenshot evidence per test (e.g. TC-SMK-01-page-loaded-20260703-143205.png)
 ```
 
 ---
@@ -504,6 +535,13 @@ Invoke: qa-coordinator
 "Execute tests for Platform/Login/login-description.md"
 ```
 
+### Execute tests at a specific roughness level (skips the question)
+
+```
+Invoke: qa-coordinator
+"Execute tests for Platform/Login/login-description.md, critical and mid only"
+```
+
 ---
 
 ## Quick Reference
@@ -521,6 +559,7 @@ Invoke: qa-coordinator
 | Full pipeline on an existing spec | `qa-coordinator` | `"Run the full QA pipeline for Platform/Dashboard/dashboard-description.md"` |
 | Generate test cases only | `qa-coordinator` | `"Generate test cases only for Platform/Dashboard/dashboard-description.md"` |
 | Execute already-filled tests | `qa-coordinator` | `"Execute tests for Platform/Dashboard/dashboard-description.md"` |
+| Execute only the critical tests | `qa-coordinator` | `"Execute tests for Platform/Dashboard/dashboard-description.md, just the critical tests"` |
 | Create spec without login | `spec-wizard-generate` | `"Create a spec for /jobs, module name vacantes"` |
 
 ---
@@ -543,7 +582,11 @@ Invoke: qa-coordinator
 
 - **Multiple modules** — each module lives in its own `Platform/{ModuleName}/` folder. Run the pipeline on any of them independently.
 
-- **Changing the base URL** — edit `vars.md`. All agents pick it up automatically on their next run.
+- **Changing the base URL** — edit `vars.md`. `test-cases.md` and `test-data.md` never need to be regenerated: they reference navigation symbolically (`<<view-id>>` / `{{BASE_URL}}`), and only `test-execution` resolves `BASE_URL` into a real URL, at run time.
+
+- **Execution timestamps** — the `test-execution` agent has no `Bash`/`date` access, so it reads the clock via a Playwright `browser_evaluate` call. Every report includes an `EXECUTION_STARTED` / `EXECUTION_COMPLETED` execution window, and every screenshot filename carries its own capture timestamp.
+
+- **Execution roughness gate** — if your Claude Code session isn't in **auto** permission mode, the pipeline asks how thorough a run should be (Critical only / Critical + Mid / All) before test-execution starts, using each test case's `Severity`. State the level upfront in your request (e.g. "just the critical tests") to skip the question — this works the same whether or not auto mode is on. In auto mode with no level stated, it defaults to running everything. Anything excluded shows up in the report as `⏭ SKIPPED`, never silently dropped.
 
 - **Credentials management** — store all login credentials in `vars.md` as named variables. When invoking agents, reference them by variable name only. This keeps sensitive data out of chat history.
 
