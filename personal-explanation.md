@@ -24,7 +24,8 @@ This repository is both the source code and the Claude Code plugin. The repo roo
 ├── hooks/                           Pipeline state machine (bash scripts)
 │
 ├── TEMPLATE.md                      Canonical spec format — read by every agent
-├── vars.md                          User-filled config: BASE_URL + credentials
+├── vars.md                          User-filled config: BASE_URL + credentials (test-execution
+│                                     persists a generated AUTH_EMAIL/AUTH_PASSWORD here on first signup)
 ├── user-guide.md                    End-user walkthrough
 ├── README.md                        Project overview and install instructions
 ├── INSTALL.md                       Detailed setup guide
@@ -124,10 +125,15 @@ flowchart TD
     subgraph TEST_EXEC["STAGE 3 - Test Execution"]
         TE[/"test-execution\nAgent Sonnet"/]
         TE -->|"Reads"| SKILL_TE["test-execution:process\nSKILL.md"]
+        TE -->|"Step 1a"| AUTH_ID{"AUTH_EMAIL/PASSWORD\nin vars.md?"}
+        AUTH_ID -->|"real values"| REUSE_ID["Reuse persisted identity\n(signup TC → ⚠️ BLOCKED)"]
+        AUTH_ID -->|"placeholders"| GEN_ID["Generate qa-{random}@yopmail.com\nvia browser_evaluate"]
+        GEN_ID -->|"signup TC → ✅ PASS"| PERSIST_ID["Write → vars.md\n(AUTH_EMAIL/AUTH_PASSWORD)"]
         TE -->|"Filters by EXECUTION_LEVEL\nvs. Severity"| SKIP_FILTER{"Severity meets\nlevel?"}
         SKIP_FILTER -->|"no"| SKIPPED_TC(["⏭ SKIPPED\n(never executed)"])
         SKIP_FILTER -->|"yes"| PW2
         TE -->|"MCP Tool Calls"| PW2["Playwright MCP headed"]
+        TE -->|"Step 3.1a: OTP/confirmation"| YOPMAIL["2nd tab →\nyopmail.com/en/"]
         TE -->|"Design Comparison"| DESIGN_MCP{"Design Reference?"}
         DESIGN_MCP -->|"Figma URL"| FIGMA_MCP["Figma MCP"]
         DESIGN_MCP -->|"Pencil name"| PENCIL_MCP["Pencil MCP"]
@@ -596,15 +602,25 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │       ├── [SKILL] Reads .claude/skills/test-execution:process/SKILL.md
        │       ├── [AGENT] Reads vars.md → this is the ONLY step in the pipeline
        │       │   where BASE_URL is resolved into a concrete domain
+       │       ├── [AGENT] Step 1a — resolves AUTH_EMAIL/AUTH_PASSWORD:
+       │       │   ├── Real values already in vars.md → reuse; a signup TC for
+       │       │   │   that same account is marked ⚠️ BLOCKED (avoid duplicate signup)
+       │       │   └── Still placeholders → generates qa-{random}@yopmail.com +
+       │       │       password via browser_evaluate; persisted to vars.md only
+       │       │       after the signup TC reaches ✅ PASS
        │       ├── [AGENT] Captures EXECUTION_STARTED timestamp via
        │       │   mcp__playwright_headed__browser_evaluate (no Bash/date available)
        │       ├── [AGENT] Hydrates test cases — ${field-name} → test data value,
-       │       │   <<view-id>> / {{BASE_URL}} → real URL from vars.md
+       │       │   <<view-id>> / {{BASE_URL}} → real URL from vars.md,
+       │       │   {{AUTH_EMAIL}} / {{AUTH_PASSWORD}} → identity from Step 1a
        │       ├── [AGENT] Filters by EXECUTION_LEVEL vs. each case's Severity
        │       │   └── Excluded cases marked ⏭ SKIPPED — never executed
        │       ├── [AGENT] Executes each remaining test via Playwright MCP
        │       │   └── navigate → snapshot → type → click → timestamped screenshot
        │       │       (captured for both ✅ PASS and ❌ FAIL; ⚠️ BLOCKED/⏭ SKIPPED have none)
+       │       │   └── Step 3.1a — any OTP/confirmation step opens a second tab,
+       │       │       checks the address on https://yopmail.com/en/, retrieves the
+       │       │       code or clicks the confirmation link, then switches back
        │       ├── [AGENT] Design Comparison (if TC-DC exists):
        │       │   ├── Figma URL → uses Figma MCP to retrieve design
        │       │   └── Pencil name → uses Pencil MCP to retrieve design
