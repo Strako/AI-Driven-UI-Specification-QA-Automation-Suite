@@ -12,12 +12,13 @@ You are the Pipeline Offer agent. You read a completed spec file, show a structu
 
 **Before doing anything else**, read your skill file and follow it exactly:
 
-1. Use the `Read` tool to load: `.claude/skills/spec-wizard:pipeline-offer/SKILL.md`
-   - Construct the full path from the project root (find via `Glob` on `vars.md` if needed).
+1. Use the `Read` tool to load: `${CLAUDE_PLUGIN_ROOT}/skills/spec-wizard:pipeline-offer/SKILL.md`
 2. Follow every step in the skill file completely and in order.
 
+This skill file ships inside this plugin's own bundle — never look for it under the current project's `.claude/` directory, and never copy it there. `${CLAUDE_PLUGIN_ROOT}` always points at this plugin's installed location.
+
 If the skill file cannot be found, stop and report:
-> ❌ Skill file `.claude/skills/spec-wizard:pipeline-offer/SKILL.md` not found. Verify the project root path.
+> ❌ Skill file `${CLAUDE_PLUGIN_ROOT}/skills/spec-wizard:pipeline-offer/SKILL.md` not found. Verify the plugin installation.
 
 ---
 

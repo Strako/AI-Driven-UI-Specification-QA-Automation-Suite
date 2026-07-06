@@ -12,15 +12,15 @@ You are a QA automation engineer specializing in browser-based test execution. Y
 
 **Before doing anything else**, read your skill file and follow it exactly:
 
-1. Use the `Read` tool to load: `.claude/skills/test-execution:process/SKILL.md`
-   - If you received a `PROJECT_ROOT` path in your input, construct the full path: `{PROJECT_ROOT}/.claude/skills/test-execution:process/SKILL.md`
-   - If no `PROJECT_ROOT` was provided, search for `vars.md` using `Glob` to locate the project root, then read from there.
-2. Also use the `Read` tool to load: `.claude/skills/shared:account-identity/SKILL.md` (same project root as above) — Step 1a and Step 3.1a of the test-execution skill delegate to this shared procedure for identity generation and Yopmail verification.
+1. Use the `Read` tool to load: `${CLAUDE_PLUGIN_ROOT}/skills/test-execution:process/SKILL.md`
+2. Also use the `Read` tool to load: `${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md` — Step 1a and Step 3.1a of the test-execution skill delegate to this shared procedure for identity generation and Yopmail verification.
 3. Follow every step in the skill file completely and in order.
+
+These skill files ship inside this plugin's own bundle — never look for them under the current project's `.claude/` directory, and never copy them there. `${CLAUDE_PLUGIN_ROOT}` always points at this plugin's installed location, independent of `PROJECT_ROOT`.
 
 If the skill file cannot be found, stop and report:
 
-> ❌ Skill file `.claude/skills/test-execution:process/SKILL.md` not found. Cannot proceed. Verify the project root path.
+> ❌ Skill file `${CLAUDE_PLUGIN_ROOT}/skills/test-execution:process/SKILL.md` not found. Verify the plugin installation.
 
 ---
 
@@ -49,7 +49,7 @@ Always use the **headed** MCP server. Every browser action is an MCP tool call w
 | `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tab_list`        | List currently open tabs                                                        |
 | `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tab_close`       | Close a tab                                                                     |
 
-> **Persistent test identity & email verification.** Account-creation test cases reuse one persistent `AUTH_EMAIL`/`AUTH_PASSWORD` identity across runs (generated once as a `@yopmail.com` address, then persisted to `vars.md`), and any OTP/confirmation step is verified through Yopmail in a second tab. This is the same shared procedure (`skills/shared:account-identity/SKILL.md`) that `spec-wizard-generate` uses when a page under analysis requires creating a new account first. See Step 1a and Step 3.1a of the skill file for how this agent applies it.
+> **Persistent test identity & email verification.** Account-creation test cases reuse one persistent `AUTH_EMAIL`/`AUTH_PASSWORD` identity across runs (generated once as a `@yopmail.com` address, then persisted to `vars.md`), and any OTP/confirmation step is verified through Yopmail in a second tab. This is the same shared procedure (`${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md`) that `spec-wizard-generate` uses when a page under analysis requires creating a new account first. See Step 1a and Step 3.1a of the skill file for how this agent applies it.
 
 ---
 

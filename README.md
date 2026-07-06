@@ -8,7 +8,7 @@ A Claude-native agent system for end-to-end UI test automation. From a live page
 
 ## Install as a Claude Code Plugin
 
-The fastest way to get started. One command installs all agents, skills, hooks, settings, and root files directly into your project.
+Install via the Claude Code plugin system. Agents, skills, and hooks always run directly from the installed plugin — they are never copied into your project's `.claude/` directory.
 
 ### Prerequisites
 
@@ -22,8 +22,6 @@ The fastest way to get started. One command installs all agents, skills, hooks, 
 
 **System requirements:** macOS, Linux, or Windows (WSL recommended) · 4 GB RAM minimum · ~500 MB disk
 
-### Option A — Claude Code Plugin (Recommended for users)
-
 **Step 1 — Add this repository as a plugin marketplace (one-time per machine):**
 
 ```bash
@@ -36,14 +34,17 @@ claude plugin marketplace add Strako/AI-Driven-UI-Specification-QA-Automation-Su
 claude plugin install AI-Driven-UI-Specification
 ```
 
-After the plugin installs, complete the setup:
+This registers the plugin's agents, skills, hooks, and MCP servers with Claude Code. They are loaded straight from the plugin's installed location (`${CLAUDE_PLUGIN_ROOT}`) at runtime — nothing is copied into your project.
+
+**Step 3 — Set up your project.** These are project-specific files you create yourself (not plugin files, so there's nothing to copy from the plugin for these):
 
 ```bash
-# 1. Fill in your app's base URL and credentials
-#    Edit vars.md at your project root
+# 1. Create vars.md at your project root with your app's base URL and credentials
+cat > vars.md <<'EOF'
 BASE_URL = https://your-app.example.com
 AUTH_EMAIL = admin@your-app.example.com
 AUTH_PASSWORD = your-password
+EOF
 
 # 2. Create the output directory
 mkdir -p Platform
@@ -59,23 +60,7 @@ echo 'export FIGMA_ACCESS_TOKEN=fig_xxxxxxxxxxxxx' >> ~/.zshrc && source ~/.zshr
 
 Open Claude Code — all agents, skills, and hooks are ready.
 
-### Option B — Clone the repository (For contributors / modification)
-
-```bash
-git clone https://github.com/Strako/AI-Driven-UI-Specification-QA-Automation-Suite.git
-cd AI-Driven-UI-Specification-QA-Automation-Suite
-
-# Copy plugin files into your target project
-cp agents/*.md        /path/to/your-project/.claude/agents/
-cp -r skills/*        /path/to/your-project/.claude/skills/
-cp hooks/*.sh         /path/to/your-project/.claude/hooks/
-chmod +x              /path/to/your-project/.claude/hooks/*.sh
-cp settings.json      /path/to/your-project/.claude/settings.json
-cp .mcp.json          /path/to/your-project/.mcp.json
-cp TEMPLATE.md vars.md user-guide.md README.md /path/to/your-project/
-```
-
-> If your project already has `.claude/settings.json` or `.mcp.json`, manually merge the relevant sections instead of overwriting.
+> **For contributors modifying this plugin's source:** clone the repo, edit files under `agents/`, `skills/`, `hooks/`, then reinstall/reload the plugin so Claude Code picks up the change from the plugin's own directory. Do not copy these files into a separate project's `.claude/` folder — that creates a stale, disconnected fork of the plugin logic.
 
 ---
 
@@ -124,7 +109,7 @@ The system uses seven Claude agents organized into three stages: spec creation, 
 
 ## Repository Structure
 
-This repository **is** the Claude Code plugin. Its root is the plugin root — when a user runs `claude plugin install`, Claude Code reads `.claude-plugin/plugin.json` here and copies files to the right places in their project.
+This repository **is** the Claude Code plugin. Its root is the plugin root — when a user runs `claude plugin install`, Claude Code registers `.claude-plugin/plugin.json` and loads the plugin's agents, skills, and hooks directly from this installed location at runtime, addressed via `${CLAUDE_PLUGIN_ROOT}`. Nothing here is copied into the consuming project's `.claude/` directory.
 
 ```
 .                                    ← repository root = plugin root
@@ -132,10 +117,10 @@ This repository **is** the Claude Code plugin. Its root is the plugin root — w
 │   ├── plugin.json                  Claude Code plugin manifest (name, version, file map)
 │   └── marketplace.json             Marketplace catalog (lets users add this repo as a source)
 ├── package.json                     npm package metadata
-├── settings.json                    → merged into .claude/settings.json
-├── .mcp.json                        → merged into .mcp.json
+├── settings.json                    plugin-level permissions + hooks (references ${CLAUDE_PLUGIN_ROOT})
+├── .mcp.json                        bundled MCP server config (playwright_headed, figma)
 │
-├── agents/                          → installs to .claude/agents/
+├── agents/                          loaded directly by Claude Code as plugin agents
 │   ├── spec-wizard.md               Legacy entry point (delegates to spec-wizard-generate)
 │   ├── spec-wizard-generate.md      Auto-generates spec from live page via Playwright
 │   ├── spec-wizard-improve.md       Interactive section-by-section spec refinement
@@ -144,7 +129,7 @@ This repository **is** the Claude Code plugin. Its root is the plugin root — w
 │   ├── test-generation.md           Test case generator from spec
 │   └── test-execution.md            Browser test executor via Playwright MCP
 │
-├── skills/                          → installs to .claude/skills/
+├── skills/                          read by agents at runtime via ${CLAUDE_PLUGIN_ROOT}/skills/...
 │   ├── spec-wizard:auto-generate/
 │   │   └── SKILL.md                 Navigate → analyze → generate spec → enrich → save
 │   ├── spec-wizard:improve/
@@ -158,18 +143,18 @@ This repository **is** the Claude Code plugin. Its root is the plugin root — w
 │   └── shared:account-identity/
 │       └── SKILL.md                 Shared: generate/persist a Yopmail test identity + OTP verification (used by spec-wizard-generate and test-execution)
 │
-├── hooks/                           → installs to .claude/hooks/
+├── hooks/                           executed in place via ${CLAUDE_PLUGIN_ROOT}/hooks/...
 │   ├── pipeline-on-user-prompt.sh   Routes user responses to next pipeline stage
 │   ├── pipeline-on-spec-created.sh  Detects spec file writes → updates state
 │   ├── pipeline-on-tests-generated.sh  Detects test-cases.md writes → updates state
 │   ├── pipeline-on-report-written.sh   Detects report writes → marks complete
 │   └── pipeline-on-execution-dispatch.sh  Gates the test-execution dispatch on auto mode
 │
-├── TEMPLATE.md                      → copied to project root (spec format standard)
-├── vars.md                          → copied to project root (fill in your values)
-├── README.md                        → copied to project root (this file)
-├── user-guide.md                    → copied to project root (step-by-step walkthrough)
-├── personal-explanation.md          Deep-dive into agents, skills, and hooks (not installed)
+├── TEMPLATE.md                      Canonical spec format — referenced from your project root; create your own copy there
+├── vars.md                          Example credentials file — create your own copy at your project root
+├── README.md                        This file
+├── user-guide.md                    Step-by-step walkthrough
+├── personal-explanation.md          Deep-dive into agents, skills, and hooks
 └── INSTALL.md                       Detailed installation and setup guide
 ```
 
@@ -238,7 +223,7 @@ After saving, offers two paths:
 | `OUTPUT_DIR` | No | Output directory (default: `Platform/{ModuleName}/`) |
 | `DESIGN_REFERENCE` | No | Pencil slide name or Figma frame URL for design comparison. Populates the "Pencil slide name / Figma frame URL" field in Screen Identification. |
 
-**Account creation (`AUTH_MODE=new`).** If the named `vars.md` variables are still placeholders (or blank), this agent generates a fresh `qa-{random}@yopmail.com` test identity, submits the signup form with it, confirms any OTP/confirmation link via a second-tab Yopmail check, and persists the result to `vars.md` — the same shared procedure (`skills/shared:account-identity/SKILL.md`) that `test-execution` uses. If a real identity is already persisted there, it's reused instead of signing up again.
+**Account creation (`AUTH_MODE=new`).** If the named `vars.md` variables are still placeholders (or blank), this agent generates a fresh `qa-{random}@yopmail.com` test identity, submits the signup form with it, confirms any OTP/confirmation link via a second-tab Yopmail check, and persists the result to `vars.md` — the same shared procedure (`${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md`) that `test-execution` uses. If a real identity is already persisted there, it's reused instead of signing up again.
 
 **Output:** `Platform/{ModuleName}/{module}-description.md`
 
@@ -327,7 +312,7 @@ Every test case also gets a **Severity** — Critical, Mid, or Low — judged by
 
 > **Model:** Sonnet · **Skill:** `test-execution:process` · **MCP:** `playwright_headed`, `figma`, `pencil`
 
-Reads `test-cases.md`, `test-data.md`, and `vars.md`, hydrates `${field-name}` placeholders with concrete values, and resolves every `<<view-id>>` / `{{BASE_URL}}` token into a real URL using `vars.md` — this is the only step in the whole pipeline where `BASE_URL` becomes a concrete domain. Before running anything, filters test cases by `EXECUTION_LEVEL` against their `Severity` (see **Execution Roughness Gate** above) — excluded cases are marked `⏭ SKIPPED` and never executed. Executes every remaining test sequentially via Playwright MCP and captures a timestamped screenshot for every test case regardless of outcome (✅ PASS or ❌ FAIL). Since the agent has no `Bash`/`date` access, every timestamp — report header, Executive Summary, screenshot filenames — is obtained by calling `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate` to read the clock inside the browser page. For Design Comparison test cases, retrieves the original design from Figma MCP or Pencil MCP and compares it against the live implementation, documenting all visual and structural discrepancies. For account-creation test cases, resolves a persistent `AUTH_EMAIL`/`AUTH_PASSWORD` test identity (generating and persisting one to `vars.md` on first use, see **Configuration** below) and verifies any OTP or confirmation email via a second tab on Yopmail — the same shared procedure (`skills/shared:account-identity/SKILL.md`) that `spec-wizard-generate` uses when a spec's target page itself requires creating an account first (`AUTH_MODE=new`).
+Reads `test-cases.md`, `test-data.md`, and `vars.md`, hydrates `${field-name}` placeholders with concrete values, and resolves every `<<view-id>>` / `{{BASE_URL}}` token into a real URL using `vars.md` — this is the only step in the whole pipeline where `BASE_URL` becomes a concrete domain. Before running anything, filters test cases by `EXECUTION_LEVEL` against their `Severity` (see **Execution Roughness Gate** above) — excluded cases are marked `⏭ SKIPPED` and never executed. Executes every remaining test sequentially via Playwright MCP and captures a timestamped screenshot for every test case regardless of outcome (✅ PASS or ❌ FAIL). Since the agent has no `Bash`/`date` access, every timestamp — report header, Executive Summary, screenshot filenames — is obtained by calling `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate` to read the clock inside the browser page. For Design Comparison test cases, retrieves the original design from Figma MCP or Pencil MCP and compares it against the live implementation, documenting all visual and structural discrepancies. For account-creation test cases, resolves a persistent `AUTH_EMAIL`/`AUTH_PASSWORD` test identity (generating and persisting one to `vars.md` on first use, see **Configuration** below) and verifies any OTP or confirmation email via a second tab on Yopmail — the same shared procedure (`${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md`) that `spec-wizard-generate` uses when a spec's target page itself requires creating an account first (`AUTH_MODE=new`).
 
 | Input | Required | Description |
 |---|---|---|
@@ -429,7 +414,7 @@ AUTH_PASSWORD = your-password
 
 Generated test cases never contain a resolved `BASE_URL` — they reference views symbolically (`<<view-id>>` / `{{BASE_URL}}`) and only the test-execution agent reads `vars.md` to resolve `BASE_URL` into a real URL, at run time. This means switching environments (dev/staging/prod) is just a matter of editing `BASE_URL` in `vars.md` — no test case ever needs to be regenerated. Authentication credentials are stored here as named variables — agents reference them by variable name (e.g. `email: AUTH_EMAIL, password: AUTH_PASSWORD`) and read the actual values at runtime. This keeps credentials out of prompts and chat history.
 
-**Persistent test identity.** While `AUTH_EMAIL` / `AUTH_PASSWORD` hold their placeholder values, both `test-execution` and `spec-wizard-generate` (when invoked with `AUTH_MODE=new`) treat them as unset. The first time either flow needs to create an account — `test-execution` running a signup/account-creation test case, or `spec-wizard-generate` analyzing a page that requires a new account first — it generates a `qa-{random}@yopmail.com` identity, verifies it via a second-tab Yopmail check (see below), and overwrites these two lines with the real values — so every subsequent run of either flow, and every other test case requiring a logged-in state, reuses that same account instead of creating a new one. Restore the placeholders to force a fresh account on the next run. This procedure is defined once, in `skills/shared:account-identity/SKILL.md`, and followed identically by both agents.
+**Persistent test identity.** While `AUTH_EMAIL` / `AUTH_PASSWORD` hold their placeholder values, both `test-execution` and `spec-wizard-generate` (when invoked with `AUTH_MODE=new`) treat them as unset. The first time either flow needs to create an account — `test-execution` running a signup/account-creation test case, or `spec-wizard-generate` analyzing a page that requires a new account first — it generates a `qa-{random}@yopmail.com` identity, verifies it via a second-tab Yopmail check (see below), and overwrites these two lines with the real values — so every subsequent run of either flow, and every other test case requiring a logged-in state, reuses that same account instead of creating a new one. Restore the placeholders to force a fresh account on the next run. This procedure is defined once, in `${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md`, and followed identically by both agents.
 
 You can define custom variable names for different environments or roles:
 

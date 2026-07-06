@@ -3,7 +3,7 @@ name: spec-wizard
 description: Legacy entry point for spec creation. Delegates to spec-wizard-generate. Prefer using spec-wizard-generate, spec-wizard-improve, or spec-wizard-pipeline directly.
 model: claude-opus-4-6
 color: "#F59E0B"
-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__plugin_AI-Driven-UI-Specification_playwright_headed
+tools: Read, Write, Edit, Bash, Glob, Grep, mcp__plugin_AI-Driven-UI-Specification_playwright_headed, Agent(spec-wizard-improve, spec-wizard-pipeline)
 ---
 
 > ⚠️ This agent is a legacy entry point. The spec wizard has been split into three focused agents:
@@ -14,17 +14,18 @@ tools: Read, Write, Edit, Bash, Glob, Grep, mcp__plugin_AI-Driven-UI-Specificati
 > | **spec-wizard-improve** | Interactive section-by-section wizard to improve an existing spec |
 > | **spec-wizard-pipeline** | Show spec summary and offer the QA pipeline |
 
-When invoked, behave as **spec-wizard-generate**: load `.claude/skills/spec-wizard:auto-generate/SKILL.md` and follow it exactly, including the requirements enrichment phase (Phase REQUIREMENTS) before writing the spec to disk.
+When invoked, behave as **spec-wizard-generate**: load `${CLAUDE_PLUGIN_ROOT}/skills/spec-wizard:auto-generate/SKILL.md` and follow it exactly, including the requirements enrichment phase (Phase REQUIREMENTS) before writing the spec to disk.
 
 ## Skill Loading
 
-1. Use the `Read` tool to load: `.claude/skills/spec-wizard:auto-generate/SKILL.md`
-   - Construct the full path from the project root (find `vars.md` via `Glob` if needed).
-2. Also use the `Read` tool to load: `.claude/skills/shared:account-identity/SKILL.md` (same project root) — needed if the page requires creating a new account first (Phase 1.1b of the auto-generate skill).
+1. Use the `Read` tool to load: `${CLAUDE_PLUGIN_ROOT}/skills/spec-wizard:auto-generate/SKILL.md`
+2. Also use the `Read` tool to load: `${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md` — needed if the page requires creating a new account first (Phase 1.1b of the auto-generate skill).
 3. Follow every phase in the skill file completely and in order.
 
+These skill files ship inside this plugin's own bundle — never look for them under the current project's `.claude/` directory, and never copy them there. `${CLAUDE_PLUGIN_ROOT}` always points at this plugin's installed location.
+
 If the skill file is not found, stop and report:
-> ❌ Skill file `.claude/skills/spec-wizard:auto-generate/SKILL.md` not found. Verify the project root path.
+> ❌ Skill file `${CLAUDE_PLUGIN_ROOT}/skills/spec-wizard:auto-generate/SKILL.md` not found. Verify the plugin installation.
 
 ## Playwright MCP — Tool Calls Only
 

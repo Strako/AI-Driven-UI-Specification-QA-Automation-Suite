@@ -248,9 +248,15 @@ Print:
 
 After the updated spec is written, you MUST immediately invoke the pipeline offer. Do not stop here.
 
-Use the **Skill** tool now:
+Use the **Agent** tool now to dispatch the pipeline-offer agent:
 
-- skill: `spec-wizard:pipeline-offer`
-- args: `SPEC_FILE={SPEC_FILE} PROJECT_ROOT={project-root}`
+```
+Dispatch subagent: spec-wizard-pipeline
 
-> This step is mandatory. Never end the conversation after the wizard without invoking the pipeline offer.
+SPEC_FILE: {SPEC_FILE}
+PROJECT_ROOT: {project-root}
+
+Show the spec summary and offer the QA pipeline for the spec above.
+```
+
+> This step is mandatory. Never end the conversation after the wizard without dispatching it. Do not try to invoke `spec-wizard:pipeline-offer` via the Skill tool — this agent's `tools:` frontmatter does not grant Skill access, so that path is a dead end. Always dispatch the dedicated `spec-wizard-pipeline` agent via the Agent tool instead.

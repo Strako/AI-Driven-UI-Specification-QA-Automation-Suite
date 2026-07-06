@@ -12,7 +12,7 @@
 
 ---
 
-## Option A — Install via Claude Code (Recommended)
+## Install via Claude Code (the only supported method)
 
 **Step 1 — Add this repository as a plugin marketplace (one-time per machine):**
 
@@ -26,44 +26,25 @@ claude plugin marketplace add Strako/AI-Driven-UI-Specification-QA-Automation-Su
 claude plugin install AI-Driven-UI-Specification
 ```
 
-This automatically installs all agents, skills, hooks, settings, MCP config, and root files into your project.
+This registers the plugin's agents, skills, hooks, and MCP servers with Claude Code. They run directly from the plugin's installed location (`${CLAUDE_PLUGIN_ROOT}`) — **never copy `agents/`, `skills/`, `hooks/`, or `settings.json` into your project's `.claude/` directory.** Doing so creates a stale fork that silently drifts from the plugin and breaks path resolution (agents look for their skill files via `${CLAUDE_PLUGIN_ROOT}`, which only resolves correctly for a properly installed plugin).
 
----
-
-## Option B — Manual Installation
-
-If you cloned or downloaded this plugin package, copy files as follows:
-
-```bash
-# 1. Copy agents
-cp agents/*.md .claude/agents/
-
-# 2. Copy skills
-cp -r skills/* .claude/skills/
-
-# 3. Copy hooks (make sure they are executable)
-cp hooks/*.sh .claude/hooks/
-chmod +x .claude/hooks/*.sh
-
-# 4. Merge settings (or copy if .claude/settings.json does not exist yet)
-cp settings.json .claude/settings.json
-
-# 5. Copy MCP server config (or merge with existing .mcp.json)
-cp .mcp.json .mcp.json
-
-# 6. Copy root files
-cp TEMPLATE.md vars.md user-guide.md README.md ./
-```
-
-> **If you already have a `.claude/settings.json`**, manually merge the `permissions.allow` entries and `hooks` blocks from `settings.json` into your existing file instead of overwriting it.
+If you're contributing to or modifying this plugin's source, clone the repo and edit files under `agents/`, `skills/`, `hooks/` directly, then reinstall/reload the plugin so Claude Code picks up the change from the plugin's own directory — do not copy those files elsewhere.
 
 ---
 
 ## Post-Installation Setup
 
-### 1. Configure vars.md
+### 0. Create TEMPLATE.md
 
-Open `vars.md` at your project root and fill in your app's credentials:
+Every agent expects `TEMPLATE.md` (the canonical spec format) at your project root, alongside `vars.md`. Seed it once from the plugin's shipped example — this is a one-time content scaffold you're free to customize per project, unlike the plugin's agents/skills/hooks, which must always run from the plugin itself:
+
+```bash
+cp "${CLAUDE_PLUGIN_ROOT}/TEMPLATE.md" ./TEMPLATE.md
+```
+
+### 1. Create vars.md
+
+Create `vars.md` at your project root with your app's credentials:
 
 ```
 BASE_URL = https://your-app.example.com
@@ -71,7 +52,7 @@ AUTH_EMAIL = admin@your-app.example.com
 AUTH_PASSWORD = your-password
 ```
 
-You can define any variable names — just reference them by name when invoking the agents.
+This is a project-owned file, not part of the plugin — you create and maintain it yourself. You can define any variable names — just reference them by name when invoking the agents.
 
 ### 2. (Optional) Figma access token
 

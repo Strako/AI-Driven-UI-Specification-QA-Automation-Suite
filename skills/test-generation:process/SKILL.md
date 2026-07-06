@@ -41,7 +41,7 @@ All output must follow the conventions defined in `TEMPLATE.md`. Apply them exac
 **Account-creation and credential fields**
 
 - For a signup/registration test case, use the same generic `${field-name}` placeholders as any other field (e.g. `${email}`, `${password}`) and leave them blank in `test-data.md` — never invent or write a literal email address anywhere in `test-cases.md` or `test-data.md`.
-- `test-execution` detects the signup test case automatically at run time, generates a fresh `qa-{random}@yopmail.com` identity for it, confirms it via Yopmail if the flow requires an OTP or confirmation link, and persists it to `vars.md` as `{{AUTH_EMAIL}}` / `{{AUTH_PASSWORD}}` (or whichever variable names `vars.md` uses) — reused by every other test case whose precondition requires a logged-in account. See `.claude/skills/shared:account-identity/SKILL.md` for the full procedure (also used by `spec-wizard-generate` when a spec's target page itself requires creating an account first).
+- `test-execution` detects the signup test case automatically at run time, generates a fresh `qa-{random}@yopmail.com` identity for it, confirms it via Yopmail if the flow requires an OTP or confirmation link, and persists it to `vars.md` as `{{AUTH_EMAIL}}` / `{{AUTH_PASSWORD}}` (or whichever variable names `vars.md` uses) — reused by every other test case whose precondition requires a logged-in account. See `${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md` for the full procedure (also used by `spec-wizard-generate` when a spec's target page itself requires creating an account first).
 
 ---
 

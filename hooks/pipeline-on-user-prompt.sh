@@ -3,8 +3,8 @@
 # Fires on every user message.
 # Routes pipeline transitions based on current state:
 #
-#   SPEC_AUTO_GENERATED       + yes    → WIZARD_REQUESTED     → invoke spec-wizard:improve skill
-#   SPEC_AUTO_GENERATED       + no     → PIPELINE_OFFER_REQ   → invoke spec-wizard:pipeline-offer skill
+#   SPEC_AUTO_GENERATED       + yes    → WIZARD_REQUESTED     → dispatch spec-wizard-improve agent
+#   SPEC_AUTO_GENERATED       + no     → PIPELINE_OFFER_REQ   → dispatch spec-wizard-pipeline agent
 #   GENERATION_COMPLETE       + done   → TEST_DATA_READY       → dispatch test-execution
 #   AWAITING_EXECUTION_LEVEL  + 1/2/3  → TEST_DATA_READY       → retry test-execution dispatch with EXECUTION_LEVEL set
 
@@ -33,9 +33,9 @@ LEVEL2_RE="(^2$|critical.*mid|mid.*critical|critical and mid|critical \+ mid)"
 LEVEL1_RE="(^1$|^critical$|critical only|just critical|only critical)"
 LEVEL3_RE="(^3$|^all$|everything|all tests|^full$)"
 
-# ── SPEC_AUTO_GENERATED: routing handled directly by spec-wizard:auto-generate skill ──
-# The skill asks the user about the wizard and dispatches spec-wizard:improve or
-# spec-wizard:pipeline-offer itself. State is updated here for tracking only.
+# ── SPEC_AUTO_GENERATED: routing handled directly by spec-wizard-generate itself ──
+# The agent asks the user about the wizard and dispatches spec-wizard-improve or
+# spec-wizard-pipeline itself via the Agent tool. State is updated here for tracking only.
 if [[ "$CURRENT_STATE" == "SPEC_AUTO_GENERATED" ]]; then
   SPEC_FILE="$PATH_LINE"
 

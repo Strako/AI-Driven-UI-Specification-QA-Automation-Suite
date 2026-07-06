@@ -26,22 +26,20 @@ This repository is both the source code and the Claude Code plugin. The repo roo
 ├── TEMPLATE.md                      Canonical spec format — read by every agent
 ├── vars.md                          User-filled config: BASE_URL + credentials (test-execution and
 │                                     spec-wizard-generate both persist a generated AUTH_EMAIL/
-│                                     AUTH_PASSWORD here on first signup — see skills/shared:account-identity/)
+│                                     AUTH_PASSWORD here on first signup — see ${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/)
 ├── user-guide.md                    End-user walkthrough
 ├── README.md                        Project overview and install instructions
 ├── INSTALL.md                       Detailed setup guide
 └── personal-explanation.md          This file — architecture reference
 ```
 
-When `claude plugin install` runs, it reads `.claude-plugin/plugin.json` and installs:
-- `agents/*.md` → `.claude/agents/`
-- `skills/**` → `.claude/skills/`
-- `hooks/*.sh` → `.claude/hooks/` (made executable automatically)
-- `settings.json` → merged into `.claude/settings.json`
-- `.mcp.json` → merged into `.mcp.json`
-- Root files → project root
+When `claude plugin install` runs, Claude Code registers `.claude-plugin/plugin.json` and loads `agents/`, `skills/`, `hooks/`, `settings.json`, and `.mcp.json` **directly from the plugin's own installed location** — none of it is copied into the consuming project's `.claude/` directory. Every reference from an agent or skill file to its own bundle uses the `${CLAUDE_PLUGIN_ROOT}` environment variable, which Claude Code resolves to wherever this plugin actually lives on disk. This is deliberate: it means updating the plugin (e.g. `claude plugin update`) instantly applies everywhere it's installed, with no stale per-project copies to fall out of sync.
 
-The `Platform/` and `docs/` folders are **not** part of the plugin. The user creates `Platform/` themselves (`mkdir Platform`). The `docs/` folder is optional and user-managed — the plugin never touches it.
+Only a small number of files are project-owned and genuinely live in the consuming project, created by the user (not the plugin):
+- `vars.md` — the project's own credentials/config
+- `TEMPLATE.md` — seeded once from the plugin's shipped copy, then free to customize per project
+- `Platform/` — created by the user (`mkdir Platform`); stores generated specs and test artifacts
+- `docs/` — optional, user-managed; the plugin only reads from it, never writes to it
 
 ---
 
@@ -166,7 +164,7 @@ An **Agent** is an isolated Claude instance with its own context window, system 
 
 ### Syntax — Agent definition file
 
-Agents are defined as markdown files with YAML frontmatter in `agents/` (in the plugin repo) or `.claude/agents/` (in a user's project after installation):
+Agents are defined as markdown files with YAML frontmatter in `agents/` in the plugin repo. Claude Code loads them directly from the installed plugin — they are never copied into a user's project.
 
 ```markdown
 ---
@@ -229,16 +227,9 @@ A **Skill** is a `SKILL.md` file with step-by-step instructions that extend Clau
 
 ### Skill location
 
-In the plugin repo:
+Skills live in the plugin repo only, and are read from there at runtime — never copied anywhere:
 ```
 skills/
-└── my-skill:process/
-    └── SKILL.md
-```
-
-After installation in a user's project:
-```
-.claude/skills/
 └── my-skill:process/
     └── SKILL.md
 ```
@@ -247,20 +238,18 @@ The subdirectory naming convention `skill-name:variant` is a colon-separated nam
 
 ### How agents use skills
 
-Every agent in this project loads its skill at startup using the `Read` tool:
+Every agent in this project loads its skill at startup using the `Read` tool, addressed via `${CLAUDE_PLUGIN_ROOT}` — the environment variable Claude Code sets to the plugin's actual installed location:
 
 ```markdown
 ## Skill Loading
 
 Before doing anything else, read your skill file:
 
-1. Use the `Read` tool to load: `.claude/skills/my-skill:process/SKILL.md`
-   - If PROJECT_ROOT was provided: `{PROJECT_ROOT}/.claude/skills/...`
-   - If not: use Glob to find `vars.md` and derive the project root
+1. Use the `Read` tool to load: `${CLAUDE_PLUGIN_ROOT}/skills/my-skill:process/SKILL.md`
 2. Follow every step in the skill file completely and in order.
 ```
 
-This pattern — agent reads skill, then executes its steps — is how all seven agents in this plugin work.
+This pattern — agent reads skill straight from the plugin bundle, then executes its steps — is how all seven agents in this plugin work. Earlier versions of these agents hardcoded `.claude/skills/...` relative to the project root, which only worked if someone manually copied the plugin's `skills/` folder into their project. That copy step doesn't happen for a normal `claude plugin install`, so the hardcoded path silently failed to resolve — this is why every agent now uses `${CLAUDE_PLUGIN_ROOT}` instead.
 
 ### Difference: Skill vs Agent
 
@@ -298,7 +287,7 @@ A **Hook** is a shell script that runs automatically at specific points in the C
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/pipeline-on-spec-created.sh"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/pipeline-on-spec-created.sh\""
           }
         ]
       }
@@ -308,7 +297,7 @@ A **Hook** is a shell script that runs automatically at specific points in the C
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/pipeline-on-user-prompt.sh"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/pipeline-on-user-prompt.sh\""
           }
         ]
       }
@@ -317,7 +306,7 @@ A **Hook** is a shell script that runs automatically at specific points in the C
 }
 ```
 
-The commands use project-relative paths (`.claude/hooks/...`), which works in any project once the hooks are installed.
+The commands are addressed via `${CLAUDE_PLUGIN_ROOT}`, which Claude Code resolves to this plugin's actual installed location — the script itself is never copied into the project.
 
 ### Available events
 
@@ -342,16 +331,15 @@ The commands use project-relative paths (`.claude/hooks/...`), which works in an
 
 ### Hook portability — how the scripts resolve paths
 
-The five hooks in this plugin resolve the project root without hardcoding any paths, using one of two equivalent patterns:
+The hook script itself always runs from the plugin's own installed location (`${CLAUDE_PLUGIN_ROOT}/hooks/...`), which is *not* the project root — so none of these scripts may derive the project root from their own script location (e.g. `dirname "${BASH_SOURCE[0]}"`). Instead, every hook uses:
 
 ```bash
 #!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT="${PWD}"
 STATE_FILE="$PROJECT/.claude/.pipeline-state"
 ```
 
-Because hooks are always installed at `.claude/hooks/`, `$SCRIPT_DIR` resolves to `<project>/.claude/hooks` and `$PROJECT` resolves two levels up to the project root. `pipeline-on-spec-created.sh` uses this form. The other four (`pipeline-on-tests-generated.sh`, `pipeline-on-report-written.sh`, `pipeline-on-user-prompt.sh`, `pipeline-on-execution-dispatch.sh`) rely on `PROJECT="${PWD}"` instead — equally portable here since Claude Code always runs hooks with the project root as the working directory. Either way, the same script works correctly in any project.
+This works because Claude Code always runs hooks with the project root as the current working directory, regardless of where the hook script physically lives. `$PROJECT` and `$STATE_FILE` land in the consuming project as intended, while the script executable itself stays inside the plugin bundle.
 
 ### Example — `pipeline-on-spec-created.sh`
 
@@ -520,7 +508,7 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
    │
    ├── [AGENT] spec-wizard-generate activates
    │   │
-   │   ├── [SKILL] Reads .claude/skills/spec-wizard:auto-generate/SKILL.md
+   │   ├── [SKILL] Reads ${CLAUDE_PLUGIN_ROOT}/skills/spec-wizard:auto-generate/SKILL.md
    │   │   └── Now knows exactly what to do (phases 0 → AUTO → REQUIREMENTS → Write)
    │   │
    │   ├── [AGENT] Phase 0: Collects inputs from user
@@ -557,7 +545,7 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
    │           └── Detects "no" → updates state to PIPELINE_OFFER_REQUESTED
    │
    ├── [AGENT] spec-wizard-pipeline activates
-   │   ├── [SKILL] Reads .claude/skills/spec-wizard:pipeline-offer/SKILL.md
+   │   ├── [SKILL] Reads ${CLAUDE_PLUGIN_ROOT}/skills/spec-wizard:pipeline-offer/SKILL.md
    │   └── Reads spec, shows summary, asks "Run QA Pipeline?"
    │
    └── USER → "yes"
@@ -565,7 +553,7 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        ├── [AGENT] qa-coordinator activates
        │   │
        │   ├── [AGENT dispatches] test-generation (sub-agent)
-       │   │   ├── [SKILL] Reads .claude/skills/test-generation:process/SKILL.md
+       │   │   ├── [SKILL] Reads ${CLAUDE_PLUGIN_ROOT}/skills/test-generation:process/SKILL.md
        │   │   ├── [AGENT] Reads spec (never vars.md), generates test cases
        │   │   │   └── Navigation stays symbolic: <<view-id>> / {{BASE_URL}} — BASE_URL
        │   │   │       is never resolved here, so the same file works in any environment
@@ -602,7 +590,7 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │   │                       (agent retries the Agent-tool call — hook now allows it through)
        │   │
        │   └── [AGENT dispatches] test-execution (sub-agent)
-       │       ├── [SKILL] Reads .claude/skills/test-execution:process/SKILL.md
+       │       ├── [SKILL] Reads ${CLAUDE_PLUGIN_ROOT}/skills/test-execution:process/SKILL.md
        │       ├── [AGENT] Reads vars.md → this is the ONLY step in the pipeline
        │       │   where BASE_URL is resolved into a concrete domain
        │       ├── [AGENT] Step 1a — resolves AUTH_EMAIL/AUTH_PASSWORD:
@@ -696,8 +684,7 @@ stateDiagram-v2
 | **Context** | Own isolated context | Loaded IN the agent's context | No Claude context |
 | **Can use tools** | Yes (Read, Write, Bash, MCP, etc.) | No — the agent uses tools | No — only shell commands |
 | **Can make decisions** | Yes — reasons and decides | No — only provides instructions | Binary: allow/block |
-| **Location in repo** | `agents/*.md` | `skills/<name>/SKILL.md` | `hooks/*.sh` |
-| **Location in project** | `.claude/agents/*.md` | `.claude/skills/<name>/SKILL.md` | `.claude/hooks/*.sh` |
+| **Location** | `agents/*.md` — loaded from the plugin | `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md` | `${CLAUDE_PLUGIN_ROOT}/hooks/*.sh` |
 | **Example** | `qa-coordinator` orchestrates pipeline | `test-execution:process` defines 6 steps | `pipeline-on-spec-created.sh` detects writes |
 
 ---
@@ -780,7 +767,7 @@ Your system prompt here.
 ## Skill Loading
 
 Before doing anything else, read your skill file:
-1. Use the `Read` tool to load: `.claude/skills/my-new-agent:process/SKILL.md`
+1. Use the `Read` tool to load: `${CLAUDE_PLUGIN_ROOT}/skills/my-new-agent:process/SKILL.md`
 2. Follow every step completely and in order.
 ```
 
@@ -794,15 +781,16 @@ Before doing anything else, read your skill file:
 
 ```bash
 #!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# The script runs from the plugin's own bundle, not the project — never derive
+# the project root from this script's own location. Use $PWD instead.
+PROJECT="${PWD}"
 
 INPUT=$(cat)
 # ... your logic ...
 exit 0
 ```
 
-2. Add it to `settings.json` under the appropriate event:
+2. Add it to `settings.json` under the appropriate event, addressed via `${CLAUDE_PLUGIN_ROOT}`:
 
 ```json
 {
@@ -811,7 +799,7 @@ exit 0
       {
         "matcher": "Write",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/my-hook.sh" }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/my-hook.sh\"" }
         ]
       }
     ]
@@ -819,7 +807,7 @@ exit 0
 }
 ```
 
-3. Hooks are installed executable by the plugin installer. If installing manually: `chmod +x .claude/hooks/my-hook.sh`.
+3. Make it executable once in the repo (`chmod +x hooks/my-hook.sh`) before committing — Claude Code runs it straight from the plugin's installed location, so there's nothing to install into a project.
 
 ### Releasing an update
 

@@ -8,4 +8,5 @@ running a test case that creates an account, or spec-wizard-generate analyzing a
 AUTH_MODE is "new" — it generates a persistent Yopmail-based test identity, verifies it, and
 overwrites these two lines with the real values so every later run (by either flow) reuses the
 same account instead of signing up again. To force a fresh account on the next run, restore the
-placeholder values. This procedure is defined once in .claude/skills/shared:account-identity/SKILL.md.
+placeholder values. This procedure is defined once in ${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md
+(inside the plugin's own bundle — this file is never copied into the project).

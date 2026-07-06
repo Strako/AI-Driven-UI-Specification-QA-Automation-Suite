@@ -8,7 +8,7 @@ Read before starting:
 
 1. `TEMPLATE.md` at the project root — canonical output format
 2. `vars.md` at the project root — extract `BASE_URL` and any authentication credential variables (e.g. `AUTH_EMAIL`, `AUTH_PASSWORD`, or custom variable names specified by the user)
-3. `.claude/skills/shared:account-identity/SKILL.md` — the shared procedure Phase 1.1 delegates to whenever the page under analysis requires creating a new account first (see Phase 1.1 below)
+3. `${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md` — the shared procedure Phase 1.1 delegates to whenever the page under analysis requires creating a new account first (see Phase 1.1 below)
 
 ---
 
@@ -85,7 +85,7 @@ Branch on the Auth answer from Phase 0.
 
 #### 1.1b — New account (create via Yopmail)
 
-Follow `.claude/skills/shared:account-identity/SKILL.md` completely, applied as:
+Follow `${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md` completely, applied as:
 
 1. **Step A** — read the specified credential variable(s) from `vars.md` and detect placeholder/blank vs. real values.
 2. **If a real identity is already persisted** — an account was already created by a previous run. Do not sign up again:
@@ -328,16 +328,28 @@ Ask the user this exact question:
 
 **If the user says yes (or ok / sure / yep / proceed):**
 
-Use the **Skill** tool immediately to invoke the improvement wizard:
+Use the **Agent** tool immediately to dispatch the improvement wizard agent:
 
-- skill: `spec-wizard:improve`
-- args: `SPEC_FILE={absolute-path-to-spec} PROJECT_ROOT={project-root}`
+```
+Dispatch subagent: spec-wizard-improve
+
+SPEC_FILE: {absolute-path-to-spec}
+PROJECT_ROOT: {project-root}
+
+Run the interactive spec improvement wizard on the spec file above.
+```
 
 **If the user says no (or nope / skip / later / not now):**
 
-Use the **Skill** tool immediately to invoke the pipeline offer:
+Use the **Agent** tool immediately to dispatch the pipeline-offer agent:
 
-- skill: `spec-wizard:pipeline-offer`
-- args: `SPEC_FILE={absolute-path-to-spec} PROJECT_ROOT={project-root}`
+```
+Dispatch subagent: spec-wizard-pipeline
 
-> These two steps are mandatory. Never end the conversation after saving the spec file without completing them.
+SPEC_FILE: {absolute-path-to-spec}
+PROJECT_ROOT: {project-root}
+
+Show the spec summary and offer the QA pipeline for the spec above.
+```
+
+> These two steps are mandatory. Never end the conversation after saving the spec file without completing them. Do not try to invoke `spec-wizard:improve` or `spec-wizard:pipeline-offer` via the Skill tool — this agent's `tools:` frontmatter does not grant Skill or Agent(qa-coordinator) access, so that path is a dead end. Always go through the dedicated agent via the Agent tool instead.
