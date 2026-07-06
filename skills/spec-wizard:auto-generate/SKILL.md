@@ -14,7 +14,16 @@ Read before starting:
 
 ## Phase 0 — Collect Inputs
 
-If these values are not already present in your input, ask for all of them in a **single message**:
+If `CALLER` is present in your input (this run was dispatched by another agent, e.g. `qa-coordinator`, not typed directly by a human at this prompt), **never print the interactive question block below**. Use only the inputs already given, and fill anything still missing with a sensible default instead of stopping to ask:
+
+- `AUTH_REQUIRED` missing → `none`
+- `OUTPUT_DIR` missing → `Platform/{ModuleName}/`
+- `DESIGN_REFERENCE` missing → `Not provided`
+- `MODULE_NAME` missing → derive from the last segment of `PAGE_URL`
+
+Print the `✅ Starting analysis…` confirmation block below either way, then proceed immediately.
+
+If `CALLER` is absent (a human is driving this conversation directly) and required values are not already present in your input, ask for all of them in a **single message**:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -221,7 +230,9 @@ Copy the full **LLM Instructions — Test Case Generation** section verbatim fro
 
 Before saving the spec to disk, offer the user an opportunity to enrich the generated spec with project requirements or user stories. This step refines the **in-memory spec draft** before writing.
 
-Print:
+**If `REQUIREMENTS_NOTE` is present in your input** (supplied by a caller such as qa-coordinator, not typed by a human at this prompt): skip the interactive prompt below entirely. Treat every sentence in `REQUIREMENTS_NOTE` as a requirement relevant to this view and apply it directly to the in-memory draft using the same rules as the "user provides a file path" case further down (Components/Fields, Business Rules, Screen States, Actions and Transitions, Detailed Flow Description) — including the **Multi-role / embedded credential variables** handling below wherever the note names more than one credential variable. Print the `✅ Requirements enrichment applied` summary (source: `REQUIREMENTS_NOTE`), then proceed to **Write the Spec File**.
+
+Otherwise, print:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -287,6 +298,21 @@ Before saving, would you like to enrich it with project requirements?
     • {list each addition or correction}
 ```
 
+### Multi-role / embedded credential variables
+
+This applies whenever the page's *content* — not the page-gating Auth question in Phase 0, but a component inside the page such as an embedded login form usable by more than one role — needs more than one named credential variable pair (e.g. a role-selectable login usable by `CLIENT_EMAIL`/`CLIENT_PASSWORD` for one role and `PROVIDER_EMAIL`/`PROVIDER_PASSWORD` for another). This can come from `REQUIREMENTS_NOTE`, a requirements file, `docs/`, or direct DOM analysis of the component itself. Whenever it applies:
+
+1. Pair every email variable with the password variable the source explicitly assigns to the *same* role — never by position, order of appearance, or guesswork. If a pairing is ambiguous or contradicted mid-message (e.g. the source corrects itself), use the final, explicitly corrected pairing.
+2. Add (or extend) a Business Rule in the spec — `<<multi-role-login-{hex}>>` — describing the roles, which variable pair authenticates which role, and any stated constraint (e.g. "plain email/password only, no social login"). Reference each credential using `{{VARIABLE_NAME}}` tokens per TEMPLATE.md's Environment Variable Placeholder Format — never a literal value.
+3. Reference the same `{{VARIABLE_NAME}}` tokens in the login component's field/precondition descriptions where relevant, exactly like `{{AUTH_EMAIL}}` / `{{AUTH_PASSWORD}}` are used elsewhere in this suite.
+4. Read `vars.md`. For every variable name used this way that does **not** already have a line in `vars.md`, use `Edit` to append a new placeholder line before saving the spec, following the existing seed-variable format, e.g.:
+   ```
+   CLIENT_EMAIL = your-login-email@example.com
+   CLIENT_PASSWORD = your-login-password
+   ```
+   Never invent or write a real credential value here — only placeholder text, exactly like the seed `AUTH_EMAIL` / `AUTH_PASSWORD` lines.
+5. Mention every newly added placeholder variable in the enrichment/save summary so the user knows to fill them in with real test credentials before test execution.
+
 ### If the user types `skip` (or any variant: "no", "none", "not now"):
 
 Print:
@@ -312,7 +338,20 @@ Print:
 
 ## Next Steps — Always Required After Saving
 
-After the spec file is written, you MUST always complete the following steps. Do not stop after saving.
+After the spec file is written:
+
+**If `CALLER` is present in your input**, skip Steps 1–2 below entirely — do not ask about the wizard, and do not dispatch `spec-wizard-improve` or `spec-wizard-pipeline`. Instead output:
+
+```
+---SPEC-GENERATED---
+SPEC_FILE: {absolute-path-to-spec}
+MODULE: {module-name}
+---SPEC-GENERATED-END---
+```
+
+followed by a brief one-line human-readable summary, and stop — control returns to `CALLER`.
+
+**Otherwise** (a human is driving this conversation directly), you MUST always complete the following steps. Do not stop after saving.
 
 ### Step 1 — Ask about the improvement wizard
 

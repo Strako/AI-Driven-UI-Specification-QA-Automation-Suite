@@ -261,9 +261,11 @@ Reads a completed spec file, shows a structured summary (components, fields, sta
 
 ### `qa-coordinator` — Pipeline Orchestrator
 
-> **Model:** Opus · **Dispatches:** `test-generation`, `test-execution`
+> **Model:** Opus · **Dispatches:** `spec-wizard-generate`, `test-generation`, `test-execution`
 
 Collects a spec file path, then runs the full pipeline or individual stages. Always uses headed browser mode. Pauses between generation and execution for the user to fill `test-data.md`. After execution, the final summary includes the results breakdown plus an **execution window** (`{STARTED} – {COMPLETED}`) taken from the test-execution report timestamps.
+
+This is also the default entry point for a plain-language "spec + test this page/module" request, even without an explicit `@qa-coordinator` mention or a full URL. It always reads `vars.md` first (for `BASE_URL` and existing credentials) before asking the user anything. If no matching spec file exists yet, it doesn't stop and ask for a URL — it runs **Stage 0 — Spec Bootstrap**: derives `PAGE_URL`/`MODULE_NAME`/`AUTH_REQUIRED` and any role-based credential variables (e.g. `CLIENT_EMAIL`/`CLIENT_PASSWORD`, `PROVIDER_EMAIL`/`PROVIDER_PASSWORD`) from the request and `vars.md`, then dispatches `spec-wizard-generate` non-interactively (`CALLER: qa-coordinator`) to create it before continuing into Stage 1.
 
 | Mode | Trigger |
 |---|---|
