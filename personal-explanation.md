@@ -24,8 +24,9 @@ This repository is both the source code and the Claude Code plugin. The repo roo
 ├── hooks/                           Pipeline state machine (bash scripts)
 │
 ├── TEMPLATE.md                      Canonical spec format — read by every agent
-├── vars.md                          User-filled config: BASE_URL + credentials (test-execution
-│                                     persists a generated AUTH_EMAIL/AUTH_PASSWORD here on first signup)
+├── vars.md                          User-filled config: BASE_URL + credentials (test-execution and
+│                                     spec-wizard-generate both persist a generated AUTH_EMAIL/
+│                                     AUTH_PASSWORD here on first signup — see skills/shared:account-identity/)
 ├── user-guide.md                    End-user walkthrough
 ├── README.md                        Project overview and install instructions
 ├── INSTALL.md                       Detailed setup guide
@@ -146,6 +147,8 @@ flowchart TD
 
     QAC --> DONE_PIPELINE(["Pipeline complete — report delivered"])
 ```
+
+> **Note on `AUTH_ID` / `GEN_ID` / `PERSIST_ID` / `YOPMAIL`.** These four nodes are drawn once, under `test-execution`, but they are not test-execution-specific logic — they're the shared `skills/shared:account-identity/SKILL.md` procedure (Steps A–E). `spec-wizard-generate` walks through the exact same four nodes in its own Phase 1.1b, triggered when its Auth answer is "new account" instead of by a signup test case reaching PASS/BLOCKED. Both agents read the shared skill file rather than keeping their own copy of the generation formula or the Yopmail steps, so the diagram's `AUTH_ID → GEN_ID → PERSIST_ID` / `YOPMAIL` sub-flow applies unchanged to either caller — only what triggers entry into it, and what "success" means at the end, differs per agent.
 
 ---
 

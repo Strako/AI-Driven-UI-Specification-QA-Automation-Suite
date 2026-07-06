@@ -42,7 +42,7 @@ USER_PASSWORD = user-secret
 
 > **Security:** Credentials are stored only in `vars.md` and read at runtime. You never type actual passwords in the chat — only variable names like `AUTH_EMAIL` or `AUTH_PASSWORD`.
 
-> **Persistent test identity.** If you leave `AUTH_EMAIL` / `AUTH_PASSWORD` as the placeholder values shown above, `test-execution` treats them as unset. The first time it runs a test case that creates an account, it generates a `@yopmail.com` test identity, verifies it via Yopmail, and overwrites these two lines with the real values — every later run reuses that same account instead of signing up again. To force a fresh account, restore the placeholder values. See **Persistent Test Identity & Email Verification** under Step 5.
+> **Persistent test identity.** If you leave `AUTH_EMAIL` / `AUTH_PASSWORD` as the placeholder values shown above, both `test-execution` and `spec-wizard-generate` (when run with `AUTH_MODE=new`, Step 1) treat them as unset. The first time either flow needs to create an account, it generates a `@yopmail.com` test identity, verifies it via Yopmail, and overwrites these two lines with the real values — every later run of either flow reuses that same account instead of signing up again. To force a fresh account, restore the placeholder values. See **Persistent Test Identity & Email Verification** under Step 5.
 
 `vars.md` and `.mcp.json` are the only required configurations. Both are placed at your project root by the plugin installer.
 
@@ -140,15 +140,19 @@ Create a spec for /dashboard
 |---|---|---|
 | `PAGE_URL` | Yes | Route or full URL of the page to analyze (e.g. `/dashboard`) |
 | `MODULE_NAME` | No | Short kebab-case name — derived from URL if omitted |
-| `AUTH_REQUIRED` | No | Whether the page needs authentication first |
-| `LOGIN_ROUTE` | If auth | Route of the login page (e.g. `/login`) |
-| `AUTH_EMAIL_VAR` | If auth | Variable name in `vars.md` for login email/username (e.g. `AUTH_EMAIL`). Credentials are never hardcoded — always read from `vars.md`. |
-| `AUTH_PASSWORD_VAR` | If auth | Variable name in `vars.md` for login password (e.g. `AUTH_PASSWORD`). Credentials are never hardcoded — always read from `vars.md`. |
-| `DESTINATION_ROUTE` | If auth | Page to analyze after login (defaults to `PAGE_URL`) |
+| `AUTH_REQUIRED` | No | Whether the page needs an authenticated session first |
+| `AUTH_MODE` | If auth | `existing` (default) — log in with an account already configured in `vars.md`. `new` — no account exists yet; create one first via Yopmail (see below). |
+| `LOGIN_ROUTE` | If `existing` | Route of the login page (e.g. `/login`) |
+| `SIGNUP_ROUTE` | If `new` | Route of the signup/registration page (e.g. `/signup`) |
+| `AUTH_EMAIL_VAR` | If auth | Variable name in `vars.md` for the email/username (e.g. `AUTH_EMAIL`). Credentials are never hardcoded — always read from (and for `new`, written to) `vars.md`. |
+| `AUTH_PASSWORD_VAR` | If auth | Variable name in `vars.md` for the password (e.g. `AUTH_PASSWORD`). Omit for `AUTH_MODE=new` passwordless signups. Credentials are never hardcoded. |
+| `DESTINATION_ROUTE` | If auth | Page to analyze after login or account creation (defaults to `PAGE_URL`) |
 | `OUTPUT_DIR` | No | Where to save (default: `Platform/{ModuleName}/`) |
 | `DESIGN_REFERENCE` | No | Pencil slide name or Figma frame URL for design comparison. When provided, enables a Design Comparison test case that compares the live page against the original design. |
 
 > All routes starting with `/` are automatically resolved as `BASE_URL + route` using `vars.md`.
+
+> **New account (`AUTH_MODE=new`).** If the named `vars.md` variables are still placeholders (or blank), the agent generates a fresh `qa-{random}@yopmail.com` identity, submits the signup form with it, confirms any OTP/confirmation link via a second-tab Yopmail check, and persists the result to `vars.md` for future runs — see **Persistent Test Identity & Email Verification** under Step 5, which describes the exact same procedure this agent follows.
 
 ### What happens
 
@@ -482,13 +486,13 @@ The TC-DC test case passes only if zero critical or major discrepancies are foun
 
 ### Persistent Test Identity & Email Verification (Yopmail)
 
-Account-creation test cases (signup/registration) don't get a fresh throwaway email every run. Instead:
+This procedure is defined once, in `skills/shared:account-identity/SKILL.md`, and followed identically by both `test-execution` (for signup/registration test cases) and `spec-wizard-generate` (for a page whose Auth answer is `new account` — see Step 1). Neither flow gets a fresh throwaway email every run:
 
-1. If `AUTH_EMAIL` / `AUTH_PASSWORD` in `vars.md` are still the placeholder values, `test-execution` generates a persistent identity the first time it runs a signup test case: a random `qa-{random}@yopmail.com` address and a matching password.
+1. If the relevant credential variable(s) in `vars.md` are still the placeholder values (or blank), the flow generates a persistent identity the first time it needs one: a random `qa-{random}@yopmail.com` address, plus a matching password if a password variable was specified.
 2. It completes the signup with that identity. If the flow requires an OTP or a confirmation email, it opens a **second browser tab**, navigates to `https://yopmail.com/en/`, checks the inbox for that exact address, retrieves the code or clicks the confirmation link, then switches back to the original tab to continue — closing the Yopmail tab afterward.
 3. If Yopmail ever shows a different inbox than expected, it returns to `https://yopmail.com/en/` and re-enters the correct address before continuing.
-4. Only once the signup test case passes does it write the generated `AUTH_EMAIL` / `AUTH_PASSWORD` back into `vars.md` — every later run, and every other test case that needs to be logged in, reuses that same persisted identity via `{{AUTH_EMAIL}}` / `{{AUTH_PASSWORD}}`.
-5. On later runs, since the account already exists, the signup test case itself is marked `⚠️ BLOCKED` (not re-executed) to avoid a false failure from a duplicate-registration error — restore the placeholders in `vars.md` if you want a brand-new account instead.
+4. Only once account creation actually succeeds does it write the generated value(s) back into `vars.md` — every later run of either flow, and every other test case that needs to be logged in, reuses that same persisted identity via `{{AUTH_EMAIL}}` / `{{AUTH_PASSWORD}}`.
+5. On later runs, since the account already exists: `test-execution` marks the signup test case itself `⚠️ BLOCKED` (not re-executed, to avoid a false failure from a duplicate-registration error), and `spec-wizard-generate` reuses the persisted identity to log in instead of signing up again. Restore the placeholders in `vars.md` if you want a brand-new account instead.
 
 Any other test case whose steps require an OTP or confirmation-email check (password reset, 2FA, etc.) is verified the same way through Yopmail, regardless of whether it's tied to the persistent identity or a one-off email used earlier in that test case.
 
@@ -563,6 +567,7 @@ Invoke: qa-coordinator
 | You want to… | Agent | Message / Action |
 |---|---|---|
 | Auto-generate a spec from a live page | `spec-wizard-generate` | `"Create a spec for /dashboard, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD"` |
+| Auto-generate a spec behind a brand-new account | `spec-wizard-generate` | `"Create a spec for /account/settings, new account at /signup with email: AUTH_EMAIL, password: AUTH_PASSWORD, destination /account/settings"` |
 | Auto-generate with design comparison | `spec-wizard-generate` | `"Create a spec for /dashboard, design reference: https://figma.com/design/...?node-id=..."` |
 | Auto-generate with Pencil design | `spec-wizard-generate` | `"Create a spec for /login, design reference: Login Screen"` |
 | Enrich spec with requirements from a file | `spec-wizard-generate` | At the enrichment prompt, type a file path (e.g. `/docs/requirements.md`) |

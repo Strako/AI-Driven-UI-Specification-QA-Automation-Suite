@@ -8,6 +8,7 @@ Read before starting:
 
 1. `TEMPLATE.md` at the project root — canonical output format
 2. `vars.md` at the project root — extract `BASE_URL` and any authentication credential variables (e.g. `AUTH_EMAIL`, `AUTH_PASSWORD`, or custom variable names specified by the user)
+3. `.claude/skills/shared:account-identity/SKILL.md` — the shared procedure Phase 1.1 delegates to whenever the page under analysis requires creating a new account first (see Phase 1.1 below)
 
 ---
 
@@ -24,12 +25,18 @@ To generate the spec I need:
 1. Page URL (required) — full URL or path (paths resolved as BASE_URL + path)
 2. Module name (optional) — kebab-case, e.g. "login", "job-detail"
    Derived from last URL segment if omitted.
-3. Authentication — does this page require login? (yes / no)
-   If yes → login route and credential variable names from vars.md:
+3. Authentication — does this page require an authenticated session? (none / existing account / new account)
+   - **none** — skip authentication entirely.
+   - **existing account** — an account already exists. Provide the login route and credential variable names from vars.md:
      - email/user variable name (e.g. AUTH_EMAIL, USER_VAR)
      - password variable name (e.g. AUTH_PASSWORD, PASSWORD_VAR)
      - destination route after login
-   The actual values are read from vars.md at runtime — never hardcode credentials.
+   - **new account** — no account exists yet; one must be created before this page can be analyzed. Provide the signup/registration route and credential variable names from vars.md:
+     - email variable name (e.g. AUTH_EMAIL) — if this variable in vars.md is still a placeholder or blank, a fresh `@yopmail.com` identity is generated automatically and persisted to vars.md for future runs; if it already holds a real value, that existing identity is reused instead of creating a new one
+     - password variable name (optional — omit for passwordless/magic-link signups)
+     - destination route after account creation completes
+     Any OTP, confirmation code, or confirmation link required to finish creating the account is retrieved automatically from Yopmail in a second browser tab — never ask the user for it.
+   In every case, the actual credential values are read from (and, for "new account", written to) vars.md at runtime — never hardcode credentials.
 4. Output directory — where to save the spec (default: Platform/{ModuleName}/)
 5. Design reference (optional) — Pencil slide name or Figma frame URL
    Used for design-vs-implementation comparison during test execution.
@@ -45,8 +52,8 @@ Once all inputs are confirmed, print the confirmation block and proceed immediat
 
   Target URL       : {full URL}
   Module           : {module-name}
-  Auth             : yes / no
-  Auth credentials : email={VAR_NAME} password={VAR_NAME} (from vars.md)
+  Auth             : none / existing account / new account
+  Auth credentials : email={VAR_NAME} password={VAR_NAME or "none"} (from vars.md)
   Design reference : {Figma URL or Pencil slide name or "Not provided"}
   Output file      : {output-dir}/{module-name}-description.md
 ```
@@ -65,12 +72,31 @@ Tool prefix for every browser call: **`mcp__playwright_headed__`**
 
 ### 1.1 — Authenticate (if required)
 
+Branch on the Auth answer from Phase 0.
+
+#### 1.1a — Existing account (login)
+
 1. Read `vars.md` and extract the credential values using the variable names provided by the user (e.g. if user said `email: AUTH_EMAIL, password: AUTH_PASSWORD`, look for `AUTH_EMAIL = ...` and `AUTH_PASSWORD = ...` in vars.md).
 2. `mcp__playwright_headed__browser_navigate` to the login URL
 3. `mcp__playwright_headed__browser_snapshot` — identify email/username field, password field, submit button by `ref=`
 4. `mcp__playwright_headed__browser_type` email/username (using the value from vars.md) → `mcp__playwright_headed__browser_type` password (using the value from vars.md) → `mcp__playwright_headed__browser_click` submit
 5. `mcp__playwright_headed__browser_snapshot` — verify navigation away from login
 6. If still on login page: continue and note "Auth status: unconfirmed" in spec
+
+#### 1.1b — New account (create via Yopmail)
+
+Follow `.claude/skills/shared:account-identity/SKILL.md` completely, applied as:
+
+1. **Step A** — read the specified credential variable(s) from `vars.md` and detect placeholder/blank vs. real values.
+2. **If a real identity is already persisted** — an account was already created by a previous run. Do not sign up again:
+   - If a separate `LOGIN_ROUTE` was also given for this page, repeat **1.1a** with the persisted credentials.
+   - Otherwise, treat the persisted identity as already authenticated for this session's purposes and continue directly to Phase 1.2.
+3. **If the credential(s) are still unset** — generate a fresh identity (**Step B**): email = `qa-{random}@yopmail.com`, plus a password (`Qa!{random}9`) only if a password variable was specified.
+4. Navigate to `SIGNUP_ROUTE`, snapshot to identify the form fields by `ref=`, type the generated value(s) into the matching fields, and submit (**Step C**).
+5. If the app requires an OTP, confirmation code, or confirmation link before the account is usable, complete **Step D** — opens `https://yopmail.com/en/` in a second tab, retrieves the code or clicks the confirmation link, then switches back to the original tab and continues the form flow.
+6. **Only if account creation is confirmed successful** (navigation away from the signup form to an authenticated state, or a success message/state, or — when Step D applied — confirmation completing without error): persist the generated value(s) to `vars.md` (**Step E**).
+7. If account creation did not succeed, leave the placeholders untouched, note "Auth status: account creation failed" in the spec, and continue to Phase 1.2 anyway using whatever page state resulted — do not abandon the whole spec generation over this.
+8. Once authenticated (or after step 7's note), navigate to `DESTINATION_ROUTE` if one was given, then continue to Phase 1.2.
 
 ### 1.2 — Navigate to target page
 

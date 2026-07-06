@@ -153,8 +153,10 @@ This repository **is** the Claude Code plugin. Its root is the plugin root — w
 │   │   └── SKILL.md                 Summarize spec → offer QA pipeline
 │   ├── test-generation:process/
 │   │   └── SKILL.md                 6-step test case generation
-│   └── test-execution:process/
-│       └── SKILL.md                 6-step browser test execution + design comparison
+│   ├── test-execution:process/
+│   │   └── SKILL.md                 6-step browser test execution + design comparison
+│   └── shared:account-identity/
+│       └── SKILL.md                 Shared: generate/persist a Yopmail test identity + OTP verification (used by spec-wizard-generate and test-execution)
 │
 ├── hooks/                           → installs to .claude/hooks/
 │   ├── pipeline-on-user-prompt.sh   Routes user responses to next pipeline stage
@@ -177,7 +179,7 @@ This repository **is** the Claude Code plugin. Its root is the plugin root — w
 YOUR_PROJECT/
 ├── .claude/
 │   ├── agents/                      7 agent definition files
-│   ├── skills/                      5 skill directories with SKILL.md files
+│   ├── skills/                      6 skill directories with SKILL.md files
 │   ├── hooks/                       5 pipeline hook scripts (executable)
 │   ├── settings.json                permissions + hook event configuration
 │   └── .pipeline-state              pipeline progress tracker (auto-managed)
@@ -226,13 +228,17 @@ After saving, offers two paths:
 |---|---|---|
 | `PAGE_URL` | Yes | Full URL or path to analyze |
 | `MODULE_NAME` | No | Kebab-case name (derived from URL if omitted) |
-| `AUTH_REQUIRED` | No | Whether the page needs login first |
-| `LOGIN_ROUTE` | If auth | Route or URL of the login page |
-| `AUTH_EMAIL_VAR` | If auth | Variable name in `vars.md` for login email/username (e.g. `AUTH_EMAIL`). Credentials are never hardcoded — always read from `vars.md`. |
-| `AUTH_PASSWORD_VAR` | If auth | Variable name in `vars.md` for login password (e.g. `AUTH_PASSWORD`). Credentials are never hardcoded — always read from `vars.md`. |
-| `DESTINATION_ROUTE` | If auth | Page to analyze after login |
+| `AUTH_REQUIRED` | No | Whether the page needs an authenticated session first |
+| `AUTH_MODE` | If auth | `existing` (default) — log in with an account already in `vars.md`. `new` — create a fresh account first via Yopmail (see below). |
+| `LOGIN_ROUTE` | If `existing` | Route or URL of the login page |
+| `SIGNUP_ROUTE` | If `new` | Route or URL of the signup/registration page |
+| `AUTH_EMAIL_VAR` | If auth | Variable name in `vars.md` for the email/username (e.g. `AUTH_EMAIL`). Credentials are never hardcoded — always read from (and for `new`, written to) `vars.md`. |
+| `AUTH_PASSWORD_VAR` | If auth | Variable name in `vars.md` for the password (e.g. `AUTH_PASSWORD`). Omit for `AUTH_MODE=new` passwordless signups. Credentials are never hardcoded. |
+| `DESTINATION_ROUTE` | If auth | Page to analyze after login or account creation |
 | `OUTPUT_DIR` | No | Output directory (default: `Platform/{ModuleName}/`) |
 | `DESIGN_REFERENCE` | No | Pencil slide name or Figma frame URL for design comparison. Populates the "Pencil slide name / Figma frame URL" field in Screen Identification. |
+
+**Account creation (`AUTH_MODE=new`).** If the named `vars.md` variables are still placeholders (or blank), this agent generates a fresh `qa-{random}@yopmail.com` test identity, submits the signup form with it, confirms any OTP/confirmation link via a second-tab Yopmail check, and persists the result to `vars.md` — the same shared procedure (`skills/shared:account-identity/SKILL.md`) that `test-execution` uses. If a real identity is already persisted there, it's reused instead of signing up again.
 
 **Output:** `Platform/{ModuleName}/{module}-description.md`
 
@@ -321,7 +327,7 @@ Every test case also gets a **Severity** — Critical, Mid, or Low — judged by
 
 > **Model:** Sonnet · **Skill:** `test-execution:process` · **MCP:** `playwright_headed`, `figma`, `pencil`
 
-Reads `test-cases.md`, `test-data.md`, and `vars.md`, hydrates `${field-name}` placeholders with concrete values, and resolves every `<<view-id>>` / `{{BASE_URL}}` token into a real URL using `vars.md` — this is the only step in the whole pipeline where `BASE_URL` becomes a concrete domain. Before running anything, filters test cases by `EXECUTION_LEVEL` against their `Severity` (see **Execution Roughness Gate** above) — excluded cases are marked `⏭ SKIPPED` and never executed. Executes every remaining test sequentially via Playwright MCP and captures a timestamped screenshot for every test case regardless of outcome (✅ PASS or ❌ FAIL). Since the agent has no `Bash`/`date` access, every timestamp — report header, Executive Summary, screenshot filenames — is obtained by calling `mcp__playwright_headed__browser_evaluate` to read the clock inside the browser page. For Design Comparison test cases, retrieves the original design from Figma MCP or Pencil MCP and compares it against the live implementation, documenting all visual and structural discrepancies. For account-creation test cases, resolves a persistent `AUTH_EMAIL`/`AUTH_PASSWORD` test identity (generating and persisting one to `vars.md` on first use, see **Configuration** below) and verifies any OTP or confirmation email via a second tab on Yopmail.
+Reads `test-cases.md`, `test-data.md`, and `vars.md`, hydrates `${field-name}` placeholders with concrete values, and resolves every `<<view-id>>` / `{{BASE_URL}}` token into a real URL using `vars.md` — this is the only step in the whole pipeline where `BASE_URL` becomes a concrete domain. Before running anything, filters test cases by `EXECUTION_LEVEL` against their `Severity` (see **Execution Roughness Gate** above) — excluded cases are marked `⏭ SKIPPED` and never executed. Executes every remaining test sequentially via Playwright MCP and captures a timestamped screenshot for every test case regardless of outcome (✅ PASS or ❌ FAIL). Since the agent has no `Bash`/`date` access, every timestamp — report header, Executive Summary, screenshot filenames — is obtained by calling `mcp__playwright_headed__browser_evaluate` to read the clock inside the browser page. For Design Comparison test cases, retrieves the original design from Figma MCP or Pencil MCP and compares it against the live implementation, documenting all visual and structural discrepancies. For account-creation test cases, resolves a persistent `AUTH_EMAIL`/`AUTH_PASSWORD` test identity (generating and persisting one to `vars.md` on first use, see **Configuration** below) and verifies any OTP or confirmation email via a second tab on Yopmail — the same shared procedure (`skills/shared:account-identity/SKILL.md`) that `spec-wizard-generate` uses when a spec's target page itself requires creating an account first (`AUTH_MODE=new`).
 
 | Input | Required | Description |
 |---|---|---|
@@ -355,6 +361,7 @@ Each agent loads its skill file at the start of every session. Skills contain st
 | `spec-wizard:pipeline-offer` | Summarize spec → offer QA pipeline dispatch |
 | `test-generation:process` | Read spec → determine coverage → write test-cases.md + test-data.md |
 | `test-execution:process` | Hydrate → execute via Playwright MCP → classify results → write report |
+| `shared:account-identity` | Shared procedure — generate/detect a Yopmail test identity, create/confirm the account, persist to `vars.md`. Followed by both `spec-wizard:auto-generate` and `test-execution:process`, never duplicated. |
 
 ---
 
@@ -422,7 +429,7 @@ AUTH_PASSWORD = your-password
 
 Generated test cases never contain a resolved `BASE_URL` — they reference views symbolically (`<<view-id>>` / `{{BASE_URL}}`) and only the test-execution agent reads `vars.md` to resolve `BASE_URL` into a real URL, at run time. This means switching environments (dev/staging/prod) is just a matter of editing `BASE_URL` in `vars.md` — no test case ever needs to be regenerated. Authentication credentials are stored here as named variables — agents reference them by variable name (e.g. `email: AUTH_EMAIL, password: AUTH_PASSWORD`) and read the actual values at runtime. This keeps credentials out of prompts and chat history.
 
-**Persistent test identity.** While `AUTH_EMAIL` / `AUTH_PASSWORD` hold their placeholder values, `test-execution` treats them as unset. The first time a signup/account-creation test case runs, it generates a `qa-{random}@yopmail.com` identity, verifies it via a second-tab Yopmail check (see below), and overwrites these two lines with the real values — so every subsequent run, and every other test case requiring a logged-in state, reuses that same account instead of creating a new one. Restore the placeholders to force a fresh account on the next run.
+**Persistent test identity.** While `AUTH_EMAIL` / `AUTH_PASSWORD` hold their placeholder values, both `test-execution` and `spec-wizard-generate` (when invoked with `AUTH_MODE=new`) treat them as unset. The first time either flow needs to create an account — `test-execution` running a signup/account-creation test case, or `spec-wizard-generate` analyzing a page that requires a new account first — it generates a `qa-{random}@yopmail.com` identity, verifies it via a second-tab Yopmail check (see below), and overwrites these two lines with the real values — so every subsequent run of either flow, and every other test case requiring a logged-in state, reuses that same account instead of creating a new one. Restore the placeholders to force a fresh account on the next run. This procedure is defined once, in `skills/shared:account-identity/SKILL.md`, and followed identically by both agents.
 
 You can define custom variable names for different environments or roles:
 
@@ -512,6 +519,21 @@ design reference: https://www.figma.com/design/abc123/MyProject?node-id=1234-567
 → test generation includes a TC-DC-01 Design Comparison test case
 → test execution retrieves the Figma design and compares against the live page
 → report includes a DESIGN COMPARISON section with discrepancy details
+```
+
+### Create a spec for a page that requires a brand-new account
+
+```
+Invoke: spec-wizard-generate
+"Create a spec for /account/settings, new account at /signup with email: AUTH_EMAIL,
+password: AUTH_PASSWORD, destination /account/settings"
+→ AUTH_EMAIL / AUTH_PASSWORD in vars.md are still placeholders
+→ generates qa-{random}@yopmail.com + a matching password
+→ submits the signup form at /signup with the generated identity
+→ if the app sends a confirmation email or OTP, opens a second tab on yopmail.com,
+  retrieves it, and continues the flow — no user input needed
+→ once account creation succeeds, persists the real values into vars.md
+→ navigates to /account/settings and generates the spec from the live DOM
 ```
 
 ### Run the pipeline on an existing spec

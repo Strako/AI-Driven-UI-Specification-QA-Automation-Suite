@@ -38,6 +38,11 @@ All output must follow the conventions defined in `TEMPLATE.md`. Apply them exac
 - When a navigation target isn't backed by a spec'd view (an ad-hoc or external path), write it literally as `{{BASE_URL}}` + the path, e.g. `{{BASE_URL}}/reset-password?token=${token}`.
 - Example: Route `/login` on `<<login-screen-f3a9c1b2>>` → reference it in the test case as `<<login-screen-f3a9c1b2>>`, never as `https://app.example.com/login`.
 
+**Account-creation and credential fields**
+
+- For a signup/registration test case, use the same generic `${field-name}` placeholders as any other field (e.g. `${email}`, `${password}`) and leave them blank in `test-data.md` — never invent or write a literal email address anywhere in `test-cases.md` or `test-data.md`.
+- `test-execution` detects the signup test case automatically at run time, generates a fresh `qa-{random}@yopmail.com` identity for it, confirms it via Yopmail if the flow requires an OTP or confirmation link, and persists it to `vars.md` as `{{AUTH_EMAIL}}` / `{{AUTH_PASSWORD}}` (or whichever variable names `vars.md` uses) — reused by every other test case whose precondition requires a logged-in account. See `.claude/skills/shared:account-identity/SKILL.md` for the full procedure (also used by `spec-wizard-generate` when a spec's target page itself requires creating an account first).
+
 ---
 
 ### Step 3 — Determine coverage
