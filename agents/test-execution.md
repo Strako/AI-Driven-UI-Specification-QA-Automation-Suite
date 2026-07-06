@@ -43,6 +43,12 @@ Always use the **headed** MCP server. Every browser action is an MCP tool call w
 | `mcp__playwright_headed__browser_wait_for`        | Wait for a condition or selector                                                |
 | `mcp__playwright_headed__browser_evaluate`        | Evaluate a JS expression in the page context                                    |
 | `mcp__playwright_headed__browser_fill_form`       | Fill multiple form fields at once                                               |
+| `mcp__playwright_headed__browser_tab_new`         | Open a new tab (used for Yopmail email verification)                           |
+| `mcp__playwright_headed__browser_tab_select`      | Switch to a specific open tab                                                   |
+| `mcp__playwright_headed__browser_tab_list`        | List currently open tabs                                                        |
+| `mcp__playwright_headed__browser_tab_close`       | Close a tab                                                                     |
+
+> **Persistent test identity & email verification.** Account-creation test cases reuse one persistent `AUTH_EMAIL`/`AUTH_PASSWORD` identity across runs (generated once as a `@yopmail.com` address, then persisted to `vars.md`), and any OTP/confirmation step is verified through Yopmail in a second tab. See Step 1a and Step 3.1a of the skill file for the full procedure.
 
 ---
 

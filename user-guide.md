@@ -42,6 +42,8 @@ USER_PASSWORD = user-secret
 
 > **Security:** Credentials are stored only in `vars.md` and read at runtime. You never type actual passwords in the chat — only variable names like `AUTH_EMAIL` or `AUTH_PASSWORD`.
 
+> **Persistent test identity.** If you leave `AUTH_EMAIL` / `AUTH_PASSWORD` as the placeholder values shown above, `test-execution` treats them as unset. The first time it runs a test case that creates an account, it generates a `@yopmail.com` test identity, verifies it via Yopmail, and overwrites these two lines with the real values — every later run reuses that same account instead of signing up again. To force a fresh account, restore the placeholder values. See **Persistent Test Identity & Email Verification** under Step 5.
+
 `vars.md` and `.mcp.json` are the only required configurations. Both are placed at your project root by the plugin installer.
 
 ### Create the output directory
@@ -477,6 +479,18 @@ If a `Pencil slide name / Figma frame URL` was provided in the spec's Screen Ide
 5. Documents all findings in a dedicated **DESIGN COMPARISON** section of the report
 
 The TC-DC test case passes only if zero critical or major discrepancies are found.
+
+### Persistent Test Identity & Email Verification (Yopmail)
+
+Account-creation test cases (signup/registration) don't get a fresh throwaway email every run. Instead:
+
+1. If `AUTH_EMAIL` / `AUTH_PASSWORD` in `vars.md` are still the placeholder values, `test-execution` generates a persistent identity the first time it runs a signup test case: a random `qa-{random}@yopmail.com` address and a matching password.
+2. It completes the signup with that identity. If the flow requires an OTP or a confirmation email, it opens a **second browser tab**, navigates to `https://yopmail.com/en/`, checks the inbox for that exact address, retrieves the code or clicks the confirmation link, then switches back to the original tab to continue — closing the Yopmail tab afterward.
+3. If Yopmail ever shows a different inbox than expected, it returns to `https://yopmail.com/en/` and re-enters the correct address before continuing.
+4. Only once the signup test case passes does it write the generated `AUTH_EMAIL` / `AUTH_PASSWORD` back into `vars.md` — every later run, and every other test case that needs to be logged in, reuses that same persisted identity via `{{AUTH_EMAIL}}` / `{{AUTH_PASSWORD}}`.
+5. On later runs, since the account already exists, the signup test case itself is marked `⚠️ BLOCKED` (not re-executed) to avoid a false failure from a duplicate-registration error — restore the placeholders in `vars.md` if you want a brand-new account instead.
+
+Any other test case whose steps require an OTP or confirmation-email check (password reset, 2FA, etc.) is verified the same way through Yopmail, regardless of whether it's tied to the persistent identity or a one-off email used earlier in that test case.
 
 ---
 

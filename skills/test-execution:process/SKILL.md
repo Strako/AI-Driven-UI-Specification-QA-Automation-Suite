@@ -31,13 +31,39 @@ Read the following files **in order** before executing anything:
 
 ---
 
+### Step 1a — Resolve the persistent test identity (AUTH_EMAIL / AUTH_PASSWORD)
+
+Some test cases create an account (signup/registration flows). This suite reuses **one persistent test identity** across every run instead of signing up fresh each time.
+
+1. **Detect placeholder vs. real values.** Compare the `AUTH_EMAIL` / `AUTH_PASSWORD` values read in Step 1 against the literal seed strings `your-login-email@example.com` and `your-login-password`.
+   - **Exact match on both → placeholders.** No persistent identity exists yet.
+   - **Anything else → real, persisted values.** Use them as-is; do not modify them in this branch.
+
+2. **If real values are already persisted:**
+   - Use `AUTH_EMAIL` / `AUTH_PASSWORD` for every `{{AUTH_EMAIL}}` / `{{AUTH_PASSWORD}}` token and for every precondition that requires an existing/logged-in account.
+   - Any test case whose purpose is to **create that same account** (Type/Description/Steps mention signup, registration, "create account") is marked `⚠️ BLOCKED` with reason: `"Persistent test account already exists (AUTH_EMAIL in vars.md) — skipping re-creation to avoid a duplicate-account error. Restore the placeholder values in vars.md to force recreation."` Do not attempt the signup submission in this case — most apps reject a duplicate registration, which would otherwise read as a false failure.
+
+3. **If placeholders are still present:**
+   - Scan all test cases for one whose Type/Description/Steps indicate account creation (keywords: "sign up", "signup", "register", "registration", "create account"). At most one such test case drives identity creation per run.
+   - **If found**, generate the persistent identity before executing that test case:
+     - Obtain a random suffix via `mcp__playwright_headed__browser_evaluate` (no `Bash`/`date` access, same constraint as Step 3.0): `() => Math.random().toString(36).slice(2, 8)` → e.g. `a8f3d1`.
+     - `AUTH_EMAIL` = `qa-{random}@yopmail.com` (e.g. `qa-a8f3d1@yopmail.com`) — must be a `@yopmail.com` address so it can be verified per Step 3.1a. The random suffix avoids colliding with other users of this suite, since Yopmail inboxes are public.
+     - `AUTH_PASSWORD` = `Qa!{random}9` (e.g. `Qa!a8f3d19`) — guarantees upper+lower+digit+symbol.
+     - Use these generated values to hydrate the signup test case's email/password fields (overriding an empty test-data.md entry for just this test case — this is the one exception to the "no test data → BLOCKED" rule in Step 2).
+     - Execute the signup flow. If it requires OTP/email confirmation, run the Yopmail procedure (Step 3.1a) using this `AUTH_EMAIL`.
+     - **Only if the test case reaches ✅ PASS** (including confirmation, if required): use `Edit` to overwrite the `AUTH_EMAIL` and `AUTH_PASSWORD` lines in `vars.md` with these generated values. This is the only step that ever writes to `vars.md`.
+     - If the signup test case does not pass, leave the placeholders untouched so the next run retries with a fresh identity.
+   - **If not found** (no account-creation test case in this run): any test case whose precondition requires an existing/logged-in account is marked `⚠️ BLOCKED` with reason: `"No persisted credentials in vars.md (still placeholders) and no account-creation test case in this run to generate them."`
+
+---
+
 ### Step 2 — Hydrate test cases with test data
 
 For every test case:
 
 - Replace each `${field-name}` placeholder in Steps and Preconditions with the concrete value from the test data (for test cases that have a matching entry in the test data file).
 - Replace each `<<view-id>>` with the corresponding URL, constructed as the `BASE_URL` value read from `vars.md` + that view's Route from the spec.
-- Replace every literal `{{BASE_URL}}` token with the `BASE_URL` value read from `vars.md` in Step 1.
+- Replace every literal `{{VARIABLE_NAME}}` token (e.g. `{{BASE_URL}}`, `{{AUTH_EMAIL}}`, `{{AUTH_PASSWORD}}`, or any custom variable) with the corresponding value read from `vars.md` in Step 1 — using the resolved identity from Step 1a for `{{AUTH_EMAIL}}` / `{{AUTH_PASSWORD}}`.
 - Keep the original TC ID, Type, Severity, and Description unchanged.
 - If a test case has **no matching test data entry** and its steps require input values, mark it as `⚠️ BLOCKED` with reason: "No test data defined for this case".
 
@@ -101,6 +127,27 @@ Both values are used in Step 4 (report header and Executive Summary).
   - **Resize viewport**: `mcp__playwright_headed__browser_resize`
   - **Wait for condition or timeout**: `mcp__playwright_headed__browser_wait_for`
   - **Evaluate JS**: `mcp__playwright_headed__browser_evaluate`
+
+#### 3.1a — Email verification via Yopmail (OTP / confirmation codes / confirmation links)
+
+Whenever a step or expected result requires checking an OTP, verification code, or confirmation email (e.g. after signup, or a 2FA/reset flow), verify it through **Yopmail** — never assume delivery, never fabricate a code.
+
+The email to check is the one relevant to the current test case — usually the resolved `{{AUTH_EMAIL}}` (Step 1a), otherwise whatever `${field-name}` email value the test case used earlier in its own steps.
+
+1. **Do not navigate away from the tab running the test.** Open a second tab: `mcp__playwright_headed__browser_tab_new`.
+2. In the new tab, navigate to `https://yopmail.com/en/`.
+3. Snapshot, then type the local-part of the target email (the part before `@yopmail.com`) into Yopmail's inbox field and open the inbox.
+4. Snapshot again and confirm the inbox header shows the exact expected address.
+   - **If it shows a different address**, navigate back to `https://yopmail.com/en/` and re-enter the correct local-part. Retry up to 2 times.
+   - If still mismatched after 2 retries, mark the test case `⚠️ BLOCKED` with reason: `"Yopmail displayed an unexpected inbox address and could not be corrected."`
+5. Open the newest message addressed from the app under test. Either:
+   - **Code/OTP**: read the code from the message body via snapshot, or
+   - **Confirmation link**: click the link directly inside Yopmail's inline message preview — this triggers server-side confirmation regardless of which tab clicks it.
+6. Switch back to the original test tab: `mcp__playwright_headed__browser_tab_select`.
+7. Continue the test flow: type the code into the app's input and submit, or — if a link was clicked — proceed per the expected result (e.g. reload/navigate, since confirmation already completed server-side).
+8. Close the Yopmail tab: `mcp__playwright_headed__browser_tab_close`, before moving to the next test case.
+
+---
 
 #### 3.2 — Evidence capture
 
