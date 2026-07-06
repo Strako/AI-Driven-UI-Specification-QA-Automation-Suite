@@ -463,7 +463,7 @@ Any test case excluded this way is **not** silently dropped — it shows up in t
 The `test-execution` agent works through every test case sequentially:
 
 1. Reads `test-cases.md`, `test-data.md`, `vars.md`, and the spec file
-2. **Captures** an `EXECUTION_STARTED` timestamp — since the agent has no `Bash`/`date` access, every timestamp is obtained by calling `mcp__playwright_headed__browser_evaluate` to read the clock inside the browser page
+2. **Captures** an `EXECUTION_STARTED` timestamp — since the agent has no `Bash`/`date` access, every timestamp is obtained by calling `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate` to read the clock inside the browser page
 3. **Hydrates** each test case — replaces every `${field-name}` with the concrete value you filled in, and resolves every `<<view-id>>` / `{{BASE_URL}}` token into a real URL using the current `BASE_URL` from `vars.md`
 4. **Filters** by the `EXECUTION_LEVEL` resolved in Step 4.5 — test cases whose `Severity` falls below the chosen level are marked `⏭ SKIPPED` and never run
 5. For each remaining test case: navigates → snapshots DOM → fills inputs → clicks buttons → captures a timestamped screenshot — mandatory for **both** ✅ PASS and ❌ FAIL results (⚠️ BLOCKED cases never execute, so there's nothing to capture)

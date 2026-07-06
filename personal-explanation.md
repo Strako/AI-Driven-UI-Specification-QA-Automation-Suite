@@ -174,7 +174,7 @@ name: my-agent
 description: Description of when to use this agent. Claude uses this to decide when to delegate.
 model: claude-sonnet-4-6
 color: "#16A34A"
-tools: Read, Write, Bash, Glob, Grep, mcp__playwright_headed
+tools: Read, Write, Bash, Glob, Grep, mcp__plugin_AI-Driven-UI-Specification_playwright_headed
 ---
 
 This is the agent's system prompt.
@@ -612,7 +612,7 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │       │       password via browser_evaluate; persisted to vars.md only
        │       │       after the signup TC reaches ✅ PASS
        │       ├── [AGENT] Captures EXECUTION_STARTED timestamp via
-       │       │   mcp__playwright_headed__browser_evaluate (no Bash/date available)
+       │       │   mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate (no Bash/date available)
        │       ├── [AGENT] Hydrates test cases — ${field-name} → test data value,
        │       │   <<view-id>> / {{BASE_URL}} → real URL from vars.md,
        │       │   {{AUTH_EMAIL}} / {{AUTH_PASSWORD}} → identity from Step 1a
@@ -721,7 +721,7 @@ Design comparison is an optional feature that compares the live web page against
 4. test-execution runs TC-DC-01:
    a. Navigates to the page and takes a screenshot
    b. Retrieves the original design:
-      - Figma URL → mcp__claude_ai_Figma__get_design_context or mcp__figma__get_node
+      - Figma URL → mcp__claude_ai_Figma__get_design_context or mcp__plugin_AI-Driven-UI-Specification_figma__get_node
       - Pencil name → mcp__pencil__batch_get
    c. Compares structure, typography, colors, spacing, components, images/icons
    d. Classifies discrepancies by severity: Critical / Major / Minor / Cosmetic
@@ -752,7 +752,7 @@ Open `agents/{agent-name}.md`. The frontmatter controls the model, tools, and be
 ---
 name: spec-wizard-generate
 model: claude-opus-4-6   ← change model here
-tools: Read, Write, Bash, Glob, Grep, mcp__playwright_headed
+tools: Read, Write, Bash, Glob, Grep, mcp__plugin_AI-Driven-UI-Specification_playwright_headed
 ---
 
 ... system prompt here — edit to change agent behavior ...

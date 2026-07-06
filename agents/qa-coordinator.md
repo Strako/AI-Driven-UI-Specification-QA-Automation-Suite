@@ -119,7 +119,7 @@ MCP_SERVER: playwright_headed
 PROJECT_ROOT: {absolute path to the project root}
 EXECUTION_LEVEL: {1|2|3 — omit this line entirely if not yet known}
 
-Execute all test cases using Playwright MCP headed server (mcp__playwright_headed__).
+Execute all test cases using Playwright MCP headed server (mcp__plugin_AI-Driven-UI-Specification_playwright_headed__).
 Save screenshots in the same directory as the test cases file.
 Follow your skill instructions exactly.
 ```

@@ -63,12 +63,12 @@ Once all inputs are confirmed, print the confirmation block and proceed immediat
 ## Phase 1 — Navigate and Analyze
 
 > ⛔ **CRITICAL — Playwright MCP only. Never write code.**
-> All browser interactions MUST be performed exclusively through **Playwright MCP tool calls** using the prefix `mcp__playwright_headed__`.
+> All browser interactions MUST be performed exclusively through **Playwright MCP tool calls** using the prefix `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__`.
 > NEVER write or run Node.js/JavaScript Playwright code (`require('playwright')`, `@playwright/test`, `page.goto()`, `page.screenshot()`, `chromium.launch()`, `npx playwright`, etc.).
 > NEVER use `Bash` to run any Playwright scripts or CLI commands for browser automation.
 > The tools below are MCP tool invocations — call them directly as tools, not as code.
 
-Tool prefix for every browser call: **`mcp__playwright_headed__`**
+Tool prefix for every browser call: **`mcp__plugin_AI-Driven-UI-Specification_playwright_headed__`**
 
 ### 1.1 — Authenticate (if required)
 
@@ -77,10 +77,10 @@ Branch on the Auth answer from Phase 0.
 #### 1.1a — Existing account (login)
 
 1. Read `vars.md` and extract the credential values using the variable names provided by the user (e.g. if user said `email: AUTH_EMAIL, password: AUTH_PASSWORD`, look for `AUTH_EMAIL = ...` and `AUTH_PASSWORD = ...` in vars.md).
-2. `mcp__playwright_headed__browser_navigate` to the login URL
-3. `mcp__playwright_headed__browser_snapshot` — identify email/username field, password field, submit button by `ref=`
-4. `mcp__playwright_headed__browser_type` email/username (using the value from vars.md) → `mcp__playwright_headed__browser_type` password (using the value from vars.md) → `mcp__playwright_headed__browser_click` submit
-5. `mcp__playwright_headed__browser_snapshot` — verify navigation away from login
+2. `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_navigate` to the login URL
+3. `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_snapshot` — identify email/username field, password field, submit button by `ref=`
+4. `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_type` email/username (using the value from vars.md) → `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_type` password (using the value from vars.md) → `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_click` submit
+5. `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_snapshot` — verify navigation away from login
 6. If still on login page: continue and note "Auth status: unconfirmed" in spec
 
 #### 1.1b — New account (create via Yopmail)
@@ -100,13 +100,13 @@ Follow `.claude/skills/shared:account-identity/SKILL.md` completely, applied as:
 
 ### 1.2 — Navigate to target page
 
-`mcp__playwright_headed__browser_navigate` to the full target URL if not already there.
+`mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_navigate` to the full target URL if not already there.
 
 ### 1.3 — Capture the page
 
-1. `mcp__playwright_headed__browser_take_screenshot` — save as `{module-name}-analysis.png` in output dir
-2. `mcp__playwright_headed__browser_snapshot` — full accessibility tree
-3. Scroll to bottom: `mcp__playwright_headed__browser_evaluate` with `window.scrollTo(0, document.body.scrollHeight)`, then `mcp__playwright_headed__browser_snapshot` again
+1. `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_take_screenshot` — save as `{module-name}-analysis.png` in output dir
+2. `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_snapshot` — full accessibility tree
+3. Scroll to bottom: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate` with `window.scrollTo(0, document.body.scrollHeight)`, then `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_snapshot` again
 4. Interact with visible tabs, accordions, or expandable sections to capture hidden content; take snapshots after each
 
 ### 1.4 — Build internal analysis

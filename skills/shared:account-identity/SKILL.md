@@ -47,7 +47,7 @@ email-only flow only ever checks the email variable.
 
 ### Step B — Generate a new identity
 
-1. Obtain a random suffix via `mcp__playwright_headed__browser_evaluate` (there is no `Bash`/`date` access in this flow): `() => Math.random().toString(36).slice(2, 8)` → e.g. `a8f3d1`.
+1. Obtain a random suffix via `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate` (there is no `Bash`/`date` access in this flow): `() => Math.random().toString(36).slice(2, 8)` → e.g. `a8f3d1`.
 2. **Email variable** → `qa-{random}@yopmail.com` (e.g. `qa-a8f3d1@yopmail.com`).
    - Always generate on the `@yopmail.com` domain — never invent or assume any other domain for a *generated* identity. This is what makes Step D (Yopmail verification) possible.
    - The only exception is Step A's "already a real value" branch: if `vars.md` already holds a real, non-placeholder email for that variable, that value's domain is used as-is and nothing is generated.
@@ -59,7 +59,7 @@ email-only flow only ever checks the email variable.
 
 ### Step C — Create the account
 
-1. Using Playwright MCP tool calls only (`mcp__playwright_headed__*` — never programmatic Playwright), fill the target signup/registration form with the value(s) generated in Step B and submit.
+1. Using Playwright MCP tool calls only (`mcp__plugin_AI-Driven-UI-Specification_playwright_headed__*` — never programmatic Playwright), fill the target signup/registration form with the value(s) generated in Step B and submit.
 2. If the flow requires an OTP, confirmation code, or confirmation link before the account is usable, run **Step D** now.
 3. Judge success by the caller's own criteria (a test case's Expected Result, or — for spec generation — navigation away from the form / an authenticated destination page loading correctly).
 
@@ -72,7 +72,7 @@ The email to check is the one generated in Step B (or, if the caller is
 verifying something other than the identity itself, whichever email value the
 caller's own flow used earlier).
 
-1. **Do not navigate away from the tab running the target flow.** Open a second tab: `mcp__playwright_headed__browser_tab_new`.
+1. **Do not navigate away from the tab running the target flow.** Open a second tab: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tab_new`.
 2. In the new tab, navigate to `https://yopmail.com/en/`.
 3. Snapshot, then type the local-part of the target email (the part before `@yopmail.com`) into Yopmail's inbox field and open the inbox.
 4. Snapshot again and confirm the inbox header shows the exact expected address.
@@ -81,9 +81,9 @@ caller's own flow used earlier).
 5. Open the newest message addressed from the app under test. Either:
    - **Code/OTP**: read the code from the message body via snapshot, or
    - **Confirmation link**: click the link directly inside Yopmail's inline message preview — this triggers server-side confirmation regardless of which tab clicks it.
-6. Switch back to the original tab: `mcp__playwright_headed__browser_tab_select`.
+6. Switch back to the original tab: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tab_select`.
 7. Continue the caller's flow: type the code into the app's input and submit, or — if a link was clicked — proceed per the expected behavior (e.g. reload/navigate, since confirmation already completed server-side).
-8. Close the Yopmail tab: `mcp__playwright_headed__browser_tab_close`, before continuing.
+8. Close the Yopmail tab: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tab_close`, before continuing.
 
 ---
 

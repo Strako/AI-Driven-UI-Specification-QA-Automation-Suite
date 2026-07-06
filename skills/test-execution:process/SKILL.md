@@ -9,12 +9,12 @@ You are acting as a QA automation engineer. Execute every test case defined in t
 ### Step 0 — Playwright MCP server
 
 > ⛔ **CRITICAL — Playwright MCP only. Never write code.**
-> All browser interactions MUST be performed exclusively through **Playwright MCP tool calls** using the prefix `mcp__playwright_headed__`.
+> All browser interactions MUST be performed exclusively through **Playwright MCP tool calls** using the prefix `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__`.
 > NEVER write or run Node.js/JavaScript Playwright code (`require('playwright')`, `@playwright/test`, `page.goto()`, `page.click()`, `chromium.launch()`, `npx playwright test`, etc.).
 > NEVER use `Bash` to run Playwright scripts, CLI commands, or any programmatic browser automation.
 > The tools below are MCP tool invocations — call them directly as tools, not as code.
 
-Tool prefix for every browser call: **`mcp__playwright_headed__`**
+Tool prefix for every browser call: **`mcp__plugin_AI-Driven-UI-Specification_playwright_headed__`**
 Never use `mcp__playwright__` (headless). Never mix prefixes mid-execution.
 
 ---
@@ -85,7 +85,7 @@ Execute each test case sequentially using the Playwright MCP tools. Follow these
 
 #### 3.0 — Timestamps
 
-There is no clock available outside the browser page (no `Bash`, no `date` command). Every timestamp used in evidence filenames and in the report **must** be obtained by calling `mcp__playwright_headed__browser_evaluate` with a JS expression evaluated in the page context. Use these two exact forms:
+There is no clock available outside the browser page (no `Bash`, no `date` command). Every timestamp used in evidence filenames and in the report **must** be obtained by calling `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate` with a JS expression evaluated in the page context. Use these two exact forms:
 
 - **Filename timestamp** — compact, filesystem-safe, no spaces or colons:
   ```js
@@ -111,18 +111,18 @@ Both values are used in Step 4 (report header and Executive Summary).
 - Execute **every** test case that was not filtered out in Step 2a. Do not skip any of the remaining ones without marking it BLOCKED.
 - Follow the steps **exactly** as defined. Do not modify, assume, or extend scenarios.
 - Before each test case, navigate to the required URL already resolved in Step 2 (from the `<<view-id>>` or `{{BASE_URL}}` tokens in the preconditions).
-- For each step, call the appropriate Playwright MCP tool (prefix: `mcp__playwright_headed__`):
-  - **Navigate**: `mcp__playwright_headed__browser_navigate`
-  - **Get DOM state / element refs**: `mcp__playwright_headed__browser_snapshot` — always call this before click/type to identify the current element `ref=` values
-  - **Click**: `mcp__playwright_headed__browser_click` — use the `ref=` from the snapshot output
-  - **Type in input / fill field**: `mcp__playwright_headed__browser_type`
-  - **Select dropdown option**: `mcp__playwright_headed__browser_select_option`
-  - **Press a key**: `mcp__playwright_headed__browser_press_key`
-  - **Hover**: `mcp__playwright_headed__browser_hover`
-  - **Screenshot for evidence**: `mcp__playwright_headed__browser_take_screenshot`
-  - **Resize viewport**: `mcp__playwright_headed__browser_resize`
-  - **Wait for condition or timeout**: `mcp__playwright_headed__browser_wait_for`
-  - **Evaluate JS**: `mcp__playwright_headed__browser_evaluate`
+- For each step, call the appropriate Playwright MCP tool (prefix: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__`):
+  - **Navigate**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_navigate`
+  - **Get DOM state / element refs**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_snapshot` — always call this before click/type to identify the current element `ref=` values
+  - **Click**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_click` — use the `ref=` from the snapshot output
+  - **Type in input / fill field**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_type`
+  - **Select dropdown option**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_select_option`
+  - **Press a key**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_press_key`
+  - **Hover**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_hover`
+  - **Screenshot for evidence**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_take_screenshot`
+  - **Resize viewport**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_resize`
+  - **Wait for condition or timeout**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_wait_for`
+  - **Evaluate JS**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate`
 
 #### 3.1a — Email verification via Yopmail (OTP / confirmation codes / confirmation links)
 
@@ -139,7 +139,7 @@ Whenever a step or expected result requires checking an OTP, verification code, 
 
 > ⛔ **Evidence is mandatory for every test case regardless of outcome.** Capture a screenshot whether the result is ✅ PASS or ❌ FAIL. Never skip evidence capture because a test passed — a passing result without a screenshot is not verifiable.
 
-- Take a **screenshot** at the end of every test case execution using `mcp__playwright_headed__browser_take_screenshot`:
+- Take a **screenshot** at the end of every test case execution using `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_take_screenshot`:
   - For ✅ **PASS** results, this screenshot is the proof of the successful end state.
   - For ❌ **FAIL** results, this screenshot is the proof of the failing end state.
 - For **failed** test cases, take an additional screenshot at the exact step where the failure occurred (obtain a fresh filename timestamp for it — do not reuse the end-of-test one).
@@ -152,11 +152,11 @@ Whenever a step or expected result requires checking an OTP, verification code, 
 
 When executing a test case of type **Design Comparison** (ID prefix `TC-DC`):
 
-1. **Navigate** to the page URL and take a full-page screenshot using `mcp__playwright_headed__browser_take_screenshot`, named using the same `{TC-ID}-{short-description}-{filename-timestamp}.png` pattern from Step 3.2 (filename timestamp obtained as defined in Step 3.0).
+1. **Navigate** to the page URL and take a full-page screenshot using `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_take_screenshot`, named using the same `{TC-ID}-{short-description}-{filename-timestamp}.png` pattern from Step 3.2 (filename timestamp obtained as defined in Step 3.0).
 2. **Retrieve the design reference** from the spec's `Pencil slide name / Figma frame URL` field:
    - **If it's a Figma URL** (contains `figma.com`): Use the **Figma MCP** tools to fetch the design frame. Extract the node ID from the URL and retrieve the frame's visual structure including components, layout, colors, typography, spacing, and hierarchy.
    - **If it's a Pencil slide name** (does not contain `figma.com`): Use the **Pencil MCP** tools to read the `.pen` file, locate the frame/slide by name using `batch_get` with a name pattern search, and extract its visual structure including components, layout, colors, typography, spacing, and hierarchy.
-3. **Take a snapshot** of the live page DOM using `mcp__playwright_headed__browser_snapshot` to get the full accessibility tree and element structure.
+3. **Take a snapshot** of the live page DOM using `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_snapshot` to get the full accessibility tree and element structure.
 4. **Compare** the design against the live implementation across these dimensions:
    - **Structure / Layout**: Component presence, order, hierarchy, positioning
    - **Typography**: Font families, sizes, weights, line heights, text colors
