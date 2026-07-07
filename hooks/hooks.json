@@ -40,6 +40,27 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "test-execution",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/pipeline-verify-report.sh\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/pipeline-verify-report.sh\""
+          }
+        ]
+      }
     ]
   }
 }

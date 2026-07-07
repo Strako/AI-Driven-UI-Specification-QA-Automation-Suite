@@ -149,6 +149,12 @@ flowchart TD
     REPORT -->|"PostToolUse Write"| HOOK_RPT["pipeline-on-report-written.sh"]
     HOOK_RPT -->|"State: EXECUTION_COMPLETE"| STATE_FILE
 
+    TE -->|"SubagentStop"| HOOK_VERIFY["pipeline-verify-report.sh"]
+    HOOK_VERIFY -->|"REPORT path missing/invalid?"| VERIFY_CHECK{"Valid on disk?"}
+    VERIFY_CHECK -->|"yes"| DONE_PIPELINE
+    VERIFY_CHECK -->|"no — recover from transcript\nWrite capture, or synthesize\nfrom evidences/ + signal"| RECOVERED["REPORT rewritten"]
+    RECOVERED -->|"exit 2, first attempt only"| TE
+
     QAC --> DONE_PIPELINE(["Pipeline complete — report delivered"])
 ```
 
@@ -646,6 +652,17 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │       │   └── [HOOK fires] pipeline-on-report-written.sh
        │       │       └── State → EXECUTION_COMPLETE
        │       └── [AGENT] Write → Platform/{module}/evidences/TC-*-{timestamp}.png (screenshots)
+       │   └── [HOOK fires — SubagentStop, agent: test-execution] pipeline-verify-report.sh
+       │       ├── Reads the ---EXECUTION-COMPLETE--- signal from this agent's own transcript
+       │       ├── Checks the REPORT path it names actually exists on disk and is
+       │       │   structurally complete (required sections, every evidences/*.png linked,
+       │       │   STARTED/COMPLETED timestamps present)
+       │       ├── If invalid/missing: rewrites REPORT — from the model's own captured
+       │       │   Write tool-call content if the transcript has one, else synthesized
+       │       │   from the signal's counts + real evidences/ files — then blocks the
+       │       │   stop once (exit 2) so the model can overwrite it with the full version
+       │       └── This is the enforcement layer — the report's existence never depends
+       │           only on the model's own claim that Step 4/6 happened
        │
        └── [AGENT] qa-coordinator delivers final report
            └── "✅ QA Pipeline Complete"

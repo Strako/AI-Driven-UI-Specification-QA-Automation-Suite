@@ -150,7 +150,9 @@ This repository **is** the Claude Code plugin. Its root is the plugin root — w
 │   ├── pipeline-on-spec-created.sh  Detects spec file writes → updates state
 │   ├── pipeline-on-tests-generated.sh  Detects test-cases.md writes → updates state → creates evidences/
 │   ├── pipeline-on-report-written.sh   Detects report writes → marks complete
-│   └── pipeline-on-execution-dispatch.sh  Gates test-execution dispatch: test-data confirmation, then execution roughness (both skipped in auto mode)
+│   ├── pipeline-on-execution-dispatch.sh  Gates test-execution dispatch: test-data confirmation, then execution roughness (both skipped in auto mode)
+│   ├── pipeline-verify-report.sh       Enforces that test-report-{module}.md really exists on disk (SubagentStop/Stop) → recovers/synthesizes it if not
+│   └── verify_execution_report.py      Parsing/validation/recovery logic for pipeline-verify-report.sh
 │
 ├── TEMPLATE.md                      Canonical spec format — referenced from your project root; create your own copy there
 ├── vars.md                          Example credentials file — create your own copy at your project root
@@ -412,6 +414,7 @@ SPEC_AUTO_GENERATED → user says yes → WIZARD_REQUESTED → wizard saves → 
 | `pipeline-on-tests-generated.sh` | After Write tool | Detects `test-cases.md` creation; also creates the module's `evidences/` subfolder up front, since `test-execution` has no `Bash`/mkdir access |
 | `pipeline-on-report-written.sh` | After Write tool | Detects `test-report-*.md` creation |
 | `pipeline-on-execution-dispatch.sh` | Before the Agent tool dispatches test-execution | Checks `permission_mode`; in auto mode allows the dispatch through unconditionally, otherwise blocks until test data is confirmed for the module, then blocks again until `EXECUTION_LEVEL` is set |
+| `pipeline-verify-report.sh` | `SubagentStop` (agent: `test-execution`) and every `Stop` | Reads the agent's own `---EXECUTION-COMPLETE---` signal from the transcript and checks the `REPORT` path it names is really on disk and structurally complete (required sections present, every evidence screenshot linked, timestamps present). If not, recovers the file — from the model's own captured `Write` tool-call content if one exists in the transcript, otherwise a synthesized report built from the signal's counts plus the real files in `evidences/` — then blocks the stop once (exit 2) so the model gets a chance to overwrite it with the authoritative version before finishing. This is what guarantees the report is never just a claim in the chat transcript. |
 
 ---
 
