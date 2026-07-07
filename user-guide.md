@@ -90,7 +90,7 @@ Generate a token from: Figma → Settings → Personal access tokens.
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> Between Step 3 and Step 4, an optional **Step 4.5 — Execution Roughness Gate** may pause the pipeline to ask how much of the suite to run — skipped when you're in Claude Code's auto permission mode or you already stated a level.
+> The pause at the end of Step 3 (fill in `test-data.md`) and the optional **Step 4.5 — Execution Roughness Gate** between Step 4 and Step 5 are both enforced by the same `PreToolUse` hook, not just an instruction the coordinator might skip. Both are skipped automatically when you're in Claude Code's **auto** permission mode — the pipeline runs straight through to execution using whatever is already in `test-data.md`, defaulting to running all tests. The roughness question is also skipped (in either mode) if you already stated a level upfront.
 
 ---
 
@@ -377,7 +377,7 @@ Every test case is also assigned a **Severity** — Critical, Mid, or Low — ju
 - ${jobs-status-filter}:
 ```
 
-After both files are written, the coordinator pauses:
+After both files are written, the coordinator reports Stage 1 completion and immediately attempts to dispatch test execution:
 
 ```
 ✅ Stage 1 complete — Test cases generated.
@@ -385,12 +385,18 @@ After both files are written, the coordinator pauses:
   test-cases.md  → 24 cases (Smoke: 3, HP: 2, Functional: 9, Edge: 6, Exploratory: 4)
                    Severity: 6 Critical, 15 Mid, 3 Low
   test-data.md   → 14 scenarios
+```
 
+Unless your session is in Claude Code's **auto** permission mode, a `PreToolUse` hook blocks that dispatch attempt until you confirm the test data is filled in, and the coordinator pauses:
+
+```
 Before execution, fill in the test data:
 📄 Platform/Dashboard/test-data.md
 
 Reply here when you are ready to continue.
 ```
+
+In **auto** mode, this pause is skipped entirely — the pipeline goes straight into Step 5 (Test Execution) using whatever is already in `test-data.md`.
 
 ---
 
@@ -436,7 +442,7 @@ The pipeline hook detects your confirmation and automatically attempts to dispat
 
 ## Step 4.5 — Execution Roughness Gate (conditional)
 
-Before test-execution actually starts, a hook checks whether your Claude Code session is running in **auto** permission mode.
+Before test-execution actually starts, the same hook that gated the test-data confirmation in Step 3 checks — as its second gate — whether your Claude Code session is running in **auto** permission mode.
 
 - **If you already stated a level** when you started the pipeline (e.g. "...just run the critical tests"), this step is skipped entirely — your choice is used, whether or not auto mode is on.
 - **If you're in auto mode** and said nothing, this step is also skipped — the pipeline defaults to running **all** test cases.
@@ -466,7 +472,7 @@ The `test-execution` agent works through every test case sequentially:
 2. **Captures** an `EXECUTION_STARTED` timestamp — since the agent has no `Bash`/`date` access, every timestamp is obtained by calling `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate` to read the clock inside the browser page
 3. **Hydrates** each test case — replaces every `${field-name}` with the concrete value you filled in, and resolves every `<<view-id>>` / `{{BASE_URL}}` token into a real URL using the current `BASE_URL` from `vars.md`
 4. **Filters** by the `EXECUTION_LEVEL` resolved in Step 4.5 — test cases whose `Severity` falls below the chosen level are marked `⏭ SKIPPED` and never run
-5. For each remaining test case: navigates → snapshots DOM → fills inputs → clicks buttons → captures a timestamped screenshot — mandatory for **both** ✅ PASS and ❌ FAIL results (⚠️ BLOCKED cases never execute, so there's nothing to capture)
+5. For each remaining test case: navigates → snapshots DOM → fills inputs → clicks buttons → captures a timestamped screenshot into the module's `evidences/` subfolder — mandatory for **both** ✅ PASS and ❌ FAIL results (⚠️ BLOCKED cases never execute, so there's nothing to capture)
 6. Classifies each result: **✅ PASS · ❌ FAIL · ⚠️ BLOCKED · ⏭ SKIPPED**
 7. Captures an `EXECUTION_COMPLETED` timestamp and writes `Platform/Dashboard/test-report-dashboard.md`, including the execution level, the execution window (`EXECUTION_STARTED` – `EXECUTION_COMPLETED`), and a **Skipped Tests Details** section (if anything was skipped) in the report
 
@@ -509,7 +515,8 @@ Platform/Dashboard/
 ├── test-cases.md                   ← generated test cases
 ├── test-data.md                    ← filled test data
 ├── test-report-dashboard.md        ← execution report (includes execution level, skipped tests, execution window)
-└── TC-*.png                        ← timestamped screenshot evidence per test (e.g. TC-SMK-01-page-loaded-20260703-143205.png)
+└── evidences/                      ← created automatically when test-cases.md is generated
+    └── TC-*.png                    ← timestamped screenshot evidence per test (e.g. TC-SMK-01-page-loaded-20260703-143205.png)
 ```
 
 ---
@@ -589,6 +596,8 @@ Invoke: qa-coordinator
 
 - **All output goes to `Platform/`** — every module gets its own subfolder. This keeps specs, test cases, and reports organized by screen.
 
+- **Screenshot evidence lives in `evidences/`** — every `TC-*.png` from test execution is saved inside `Platform/{ModuleName}/evidences/`, never directly in the module folder. This subfolder is created automatically by a pipeline hook the moment `test-cases.md` is generated, so it's already there by the time execution starts. (The `{module}-analysis.png` from spec auto-generation is unrelated and stays in the module root.)
+
 - **Requirements enrichment** — place your project requirements or user stories as `.md` or `.csv` files in a `docs/` folder at your project root. When the agent asks about requirements enrichment, type `docs` to apply them automatically. The agent matches requirements to the specific view being analyzed — it only applies relevant items and ignores content for other modules.
 
 - **Design comparison** — provide a Figma frame URL or Pencil slide name when creating a spec to enable automatic design-vs-implementation comparison. The system retrieves the design using the appropriate MCP tool and compares it against the live page during test execution. Discrepancies are classified by severity and documented in the report.
@@ -604,6 +613,8 @@ Invoke: qa-coordinator
 - **Changing the base URL** — edit `vars.md`. `test-cases.md` and `test-data.md` never need to be regenerated: they reference navigation symbolically (`<<view-id>>` / `{{BASE_URL}}`), and only `test-execution` resolves `BASE_URL` into a real URL, at run time.
 
 - **Execution timestamps** — the `test-execution` agent has no `Bash`/`date` access, so it reads the clock via a Playwright `browser_evaluate` call. Every report includes an `EXECUTION_STARTED` / `EXECUTION_COMPLETED` execution window, and every screenshot filename carries its own capture timestamp.
+
+- **Test data confirmation gate** — if your Claude Code session isn't in **auto** permission mode, a `PreToolUse` hook blocks test-execution from starting until you've explicitly confirmed `test-data.md` is filled in (see Step 3/4). In **auto** mode, this is skipped automatically and test-execution runs against whatever `test-data.md` currently contains — so double-check it's filled in before starting a pipeline run in auto mode.
 
 - **Execution roughness gate** — if your Claude Code session isn't in **auto** permission mode, the pipeline asks how thorough a run should be (Critical only / Critical + Mid / All) before test-execution starts, using each test case's `Severity`. State the level upfront in your request (e.g. "just the critical tests") to skip the question — this works the same whether or not auto mode is on. In auto mode with no level stated, it defaults to running everything. Anything excluded shows up in the report as `⏭ SKIPPED`, never silently dropped.
 

@@ -105,6 +105,8 @@ The system uses seven Claude agents organized into three stages: spec creation, 
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+> This pause is enforced by the `pipeline-on-execution-dispatch.sh` `PreToolUse` hook — not just an instruction the coordinator agent might skip. It's skipped automatically only when the session is in Claude Code's **auto** permission mode; otherwise the pipeline blocks until you confirm `test-data.md` is filled in. See **Stage Gate — Test Data Confirmation** below.
+
 ---
 
 ## Repository Structure
@@ -146,9 +148,9 @@ This repository **is** the Claude Code plugin. Its root is the plugin root — w
 ├── hooks/                           executed in place via ${CLAUDE_PLUGIN_ROOT}/hooks/...
 │   ├── pipeline-on-user-prompt.sh   Routes user responses to next pipeline stage
 │   ├── pipeline-on-spec-created.sh  Detects spec file writes → updates state
-│   ├── pipeline-on-tests-generated.sh  Detects test-cases.md writes → updates state
+│   ├── pipeline-on-tests-generated.sh  Detects test-cases.md writes → updates state → creates evidences/
 │   ├── pipeline-on-report-written.sh   Detects report writes → marks complete
-│   └── pipeline-on-execution-dispatch.sh  Gates the test-execution dispatch on auto mode
+│   └── pipeline-on-execution-dispatch.sh  Gates test-execution dispatch: test-data confirmation, then execution roughness (both skipped in auto mode)
 │
 ├── TEMPLATE.md                      Canonical spec format — referenced from your project root; create your own copy there
 ├── vars.md                          Example credentials file — create your own copy at your project root
@@ -178,7 +180,8 @@ YOUR_PROJECT/
 │       ├── test-cases.md            generated test cases (data-agnostic)
 │       ├── test-data.md             fillable test data template
 │       ├── test-report-{module}.md  execution report
-│       └── TC-*.png                 timestamped screenshot evidence per test
+│       └── evidences/               created automatically when test-cases.md is generated
+│           └── TC-*.png             timestamped screenshot evidence per test
 │
 ├── docs/                            ← create this for requirements enrichment
 │   └── *.md / *.csv                requirements files scanned during spec generation
@@ -263,7 +266,7 @@ Reads a completed spec file, shows a structured summary (components, fields, sta
 
 > **Model:** Opus · **Dispatches:** `spec-wizard-generate`, `test-generation`, `test-execution`
 
-Collects a spec file path, then runs the full pipeline or individual stages. Always uses headed browser mode. Pauses between generation and execution for the user to fill `test-data.md`. After execution, the final summary includes the results breakdown plus an **execution window** (`{STARTED} – {COMPLETED}`) taken from the test-execution report timestamps.
+Collects a spec file path, then runs the full pipeline or individual stages. Always uses headed browser mode. Pauses between generation and execution for the user to fill `test-data.md` — enforced by a `PreToolUse` hook, not just an instruction, and skipped automatically when the session is in Claude Code's **auto** permission mode (see **Stage Gate — Test Data Confirmation** below). After execution, the final summary includes the results breakdown plus an **execution window** (`{STARTED} – {COMPLETED}`) taken from the test-execution report timestamps.
 
 This is also the default entry point for a plain-language "spec + test this page/module" request, even without an explicit `@qa-coordinator` mention or a full URL. It always reads `vars.md` first (for `BASE_URL` and existing credentials) before asking the user anything. If no matching spec file exists yet, it doesn't stop and ask for a URL — it runs **Stage 0 — Spec Bootstrap**: derives `PAGE_URL`/`MODULE_NAME`/`AUTH_REQUIRED` and any role-based credential variables (e.g. `CLIENT_EMAIL`/`CLIENT_PASSWORD`, `PROVIDER_EMAIL`/`PROVIDER_PASSWORD`) from the request and `vars.md`, then dispatches `spec-wizard-generate` non-interactively (`CALLER: qa-coordinator`) to create it before continuing into Stage 1.
 
@@ -273,10 +276,14 @@ This is also the default entry point for a plain-language "spec + test this page
 | **Generate Only** | "generate", "test cases only", "create tests" |
 | **Execute Only** | "execute", "run tests", "only execute" |
 
-**Execution Roughness Gate** — before dispatching `test-execution`, a `PreToolUse` hook checks whether the session is running in Claude Code's **auto** permission mode:
+Every attempt to dispatch `test-execution` passes through the same `pipeline-on-execution-dispatch.sh` `PreToolUse` hook, which runs two ordered gates. In Claude Code's **auto** permission mode, both gates are skipped unconditionally on the first attempt — nobody is necessarily watching to answer a question, so the dispatch goes straight through and test-execution runs against whatever `test-data.md` currently holds, defaulting `EXECUTION_LEVEL` to `3` (All). Outside of auto mode, each gate below blocks the dispatch (and `qa-coordinator` asks a question) until satisfied, then the retry moves on to the next gate.
+
+**Test Data Confirmation Gate** — checked first. If the pipeline state shows test cases were just generated and no confirmation reply has been seen yet for this module, the hook blocks the dispatch and `qa-coordinator` asks you to fill in `test-data.md` and reply when ready (e.g. "done"). The `UserPromptSubmit` hook recognizes the reply and retries the dispatch, which then moves on to the roughness gate below.
+
+**Execution Roughness Gate** — checked once test data is confirmed (or skipped via auto mode):
 
 - If the initiating message already states a level explicitly (e.g. "just run the critical tests"), that always wins — no question is asked, in either mode.
-- Otherwise, in **auto** mode, execution defaults to running **all** test cases (level 3) — nobody is necessarily watching to answer a question.
+- Otherwise, in **auto** mode, execution defaults to running **all** test cases (level 3).
 - Otherwise (not auto mode, no explicit level), the hook blocks the dispatch and `qa-coordinator` asks the user directly:
 
   > **1** — Critical only · **2** — Critical + Mid · **3** — All
@@ -288,7 +295,9 @@ This is also the default entry point for a plain-language "spec + test this page
 ```
 spec file → test-generation → test-cases.md + test-data.md
                                     │
-                              [PAUSE — fill test-data.md]
+                    [GATE — test-data confirmation; skipped in auto mode]
+                                    │
+                    [GATE — execution roughness level; skipped in auto mode or if pre-stated]
                                     │
                               test-execution → test-report-{module}.md + screenshots
 ```
@@ -368,29 +377,31 @@ SPEC_AUTO_GENERATED → user says yes → WIZARD_REQUESTED → wizard saves → 
                                                          ↓
                                               GENERATION_COMPLETE
                                                          ↓
-                                              user says "done" / "ready"
+                                    test-execution dispatch attempted (immediately)
                                                          ↓
-                                              TEST_DATA_READY
-                                                         ↓
-                                              test-execution dispatch attempted
-                                                         ↓
-                              ┌──── auto mode, or EXECUTION_LEVEL already known ────┐
-                              ↓                                                     │
-                    test-execution dispatched                                       │
-                              │                                                     │
-                              ↓                                            not auto mode,
-                     EXECUTION_COMPLETE                                    no level yet
-                                                                                     │
-                                                                                     ↓
-                                                                     AWAITING_EXECUTION_LEVEL
-                                                                                     ↓
-                                                                     user answers 1 / 2 / 3
-                                                                                     ↓
-                                                                          TEST_DATA_READY
-                                                                        (retry dispatch, above)
+                                    ┌──────────────── auto mode ────────────────┐
+                                    ↓                                          │
+                          test-execution dispatched                           │
+                                    │                                 not auto mode
+                                    ↓                                          │
+                           EXECUTION_COMPLETE                                 ↓
+                                                          test data confirmed for this module?
+                                                                                │
+                                                    ┌────── no ────────────────┴────── yes ──┐
+                                                    ↓                                         ↓
+                                        (blocked; state stays                     EXECUTION_LEVEL known?
+                                         GENERATION_COMPLETE)                                 │
+                                                    ↓                          ┌── no ────────┴──── yes ──┐
+                                        user says "done" / "ready"             ↓                          ↓
+                                                    ↓                AWAITING_EXECUTION_LEVEL   test-execution dispatched
+                                             TEST_DATA_READY                   ↓                          ↓
+                                                    ↓                user answers 1 / 2 / 3        EXECUTION_COMPLETE
+                                                    └──────── retry dispatch ────┘
+                                                       (re-enters "dispatch attempted" above,
+                                                        now with test data confirmed)
 ```
 
-> The requirements enrichment step happens **before** the spec is written to disk, so it does not introduce new pipeline states. The `SPEC_AUTO_GENERATED` state is set only after the enriched spec is saved. `AWAITING_EXECUTION_LEVEL` is a detour off `TEST_DATA_READY`, not a new terminal stage — it always resolves back into the same dispatch step, now carrying `EXECUTION_LEVEL`.
+> The requirements enrichment step happens **before** the spec is written to disk, so it does not introduce new pipeline states. The `SPEC_AUTO_GENERATED` state is set only after the enriched spec is saved. `qa-coordinator` no longer waits on its own before attempting the Stage 2 dispatch — it attempts immediately after Stage 1, and `pipeline-on-execution-dispatch.sh` decides whether that attempt is allowed through, blocked for test-data confirmation, or blocked for the roughness level. `AWAITING_EXECUTION_LEVEL` is a detour that only occurs after test data is confirmed — it always resolves back into a dispatch retry, now carrying `EXECUTION_LEVEL`, at which point the test-data gate is already satisfied and only the roughness gate remains.
 
 **Hooks:**
 
@@ -398,9 +409,9 @@ SPEC_AUTO_GENERATED → user says yes → WIZARD_REQUESTED → wizard saves → 
 |---|---|---|
 | `pipeline-on-user-prompt.sh` | Every user message | Routes "yes/no/done" responses to next stage; resolves 1/2/3 execution-level replies |
 | `pipeline-on-spec-created.sh` | After Write tool | Detects spec file creation in `Platform/` |
-| `pipeline-on-tests-generated.sh` | After Write tool | Detects `test-cases.md` creation |
+| `pipeline-on-tests-generated.sh` | After Write tool | Detects `test-cases.md` creation; also creates the module's `evidences/` subfolder up front, since `test-execution` has no `Bash`/mkdir access |
 | `pipeline-on-report-written.sh` | After Write tool | Detects `test-report-*.md` creation |
-| `pipeline-on-execution-dispatch.sh` | Before the Agent tool dispatches test-execution | Checks `permission_mode`; blocks the dispatch if not auto mode and no `EXECUTION_LEVEL` is set yet |
+| `pipeline-on-execution-dispatch.sh` | Before the Agent tool dispatches test-execution | Checks `permission_mode`; in auto mode allows the dispatch through unconditionally, otherwise blocks until test data is confirmed for the module, then blocks again until `EXECUTION_LEVEL` is set |
 
 ---
 
@@ -491,7 +502,8 @@ Invoke: spec-wizard-generate
 → asks: "Run the improvement wizard?" → yes
 → spec-wizard-improve walks through 9 sections
 → spec-wizard-pipeline shows summary and offers QA pipeline → yes
-→ qa-coordinator generates tests, pauses for test-data.md
+→ qa-coordinator generates tests, attempts to dispatch test-execution immediately
+→ not in auto mode: dispatch is blocked, pauses for you to fill test-data.md
 → you fill test-data.md → confirm
 → test-execution runs and delivers the report
 ```
@@ -529,9 +541,23 @@ password: AUTH_PASSWORD, destination /account/settings"
 Invoke: qa-coordinator
 "Run the full QA pipeline for Platform/Login/login-description.md"
 → dispatches test-generation → test-cases.md + test-data.md
+→ attempts to dispatch test-execution immediately — not in auto mode, so it's blocked
 → pauses: "Fill test-data.md and confirm when ready"
 → you fill test-data.md → confirm
 → dispatches test-execution → test-report-login.md generated
+```
+
+### Run the same pipeline in Claude Code's auto permission mode (no pauses)
+
+```
+Invoke: qa-coordinator
+"Run the full QA pipeline for Platform/Login/login-description.md"
+→ dispatches test-generation → test-cases.md + test-data.md
+→ attempts to dispatch test-execution immediately
+→ auto mode: both the test-data confirmation gate and the roughness gate are skipped
+→ dispatches test-execution straight away against whatever test-data.md currently holds
+→ EXECUTION_LEVEL defaults to 3 (All) since none was stated
+→ test-report-login.md generated
 ```
 
 ### Run the pipeline with the execution roughness gate (not in auto mode)
@@ -569,10 +595,10 @@ Every artifact is linked:
     └── test-cases.md          references <<view-id>> and ${field-names} from spec
     └── test-data.md           provides concrete values per scenario
     └── test-report-{module}.md  records PASS/FAIL/BLOCKED/SKIPPED per TC ID + execution level + execution window
-    └── TC-*.png               timestamped screenshot evidence linked to TC IDs in the report
+    └── evidences/TC-*.png     timestamped screenshot evidence linked to TC IDs in the report
 ```
 
-Test IDs follow the format `TC-{TYPE}-{NN}` (e.g. `TC-SMK-01`, `TC-HP-01`). Screenshots follow `{TC-ID}-{short-description}-{filename-timestamp}.png` (e.g. `TC-SMK-01-page-loaded-20260703-143205.png`) — evidence is captured for every ✅ PASS and ❌ FAIL case; ⚠️ BLOCKED cases never execute, so there's nothing to capture.
+Test IDs follow the format `TC-{TYPE}-{NN}` (e.g. `TC-SMK-01`, `TC-HP-01`). Screenshots follow `{TC-ID}-{short-description}-{filename-timestamp}.png` (e.g. `TC-SMK-01-page-loaded-20260703-143205.png`) and always live in the module's `evidences/` subfolder, never directly in the module root — created automatically by a hook the moment `test-cases.md` is generated. Evidence is captured for every ✅ PASS and ❌ FAIL case; ⚠️ BLOCKED cases never execute, so there's nothing to capture.
 
 ---
 

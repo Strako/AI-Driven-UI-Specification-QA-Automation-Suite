@@ -380,7 +380,7 @@ After executing this test case, the report must include a dedicated section:
 - **En el diseño**: {descripción de cómo se ve en el diseño}
 - **En la implementación**: {descripción de cómo se ve en la web}
 - **Componente afectado**: `<<component-id>>` o elemento específico
-- **Evidencia**: {screenshot filename}
+- **Evidencia**: {ruta del screenshot relativa al directorio del archivo de test cases, ej. `evidences/TC-DC-01-...png`}
 
 (Repetir para cada discrepancia encontrada)
 ```

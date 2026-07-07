@@ -146,13 +146,13 @@ Whenever a step or expected result requires checking an OTP, verification code, 
 - ⚠️ **BLOCKED** test cases have no evidence to capture, since they never execute — record the reason instead (Step 3.4).
 - Before capturing each screenshot, obtain a **filename timestamp** as defined in Step 3.0.
 - Name screenshots using the pattern: `{TC-ID}-{short-description}-{filename-timestamp}.png` (e.g. `TC-SMK-01-page-loaded-20260703-143205.png`, and for a failure step `TC-SMK-01-failure-step-20260703-143207.png`).
-- Save all screenshots in the same directory as the test cases file.
+- Save all screenshots inside an **`evidences/`** subfolder of the test cases file's directory — never directly in the module folder. Pass the `filename` parameter of `browser_take_screenshot` as the full path `{absolute directory of the test cases file}/evidences/{TC-ID}-{short-description}-{filename-timestamp}.png`. This subfolder is created automatically by the `pipeline-on-tests-generated.sh` hook when `test-cases.md` is written, so it already exists by the time execution starts — do not attempt to create it yourself (this agent has no `Bash`/mkdir access).
 
 #### 3.3 — Design Comparison execution (TC-DC type)
 
 When executing a test case of type **Design Comparison** (ID prefix `TC-DC`):
 
-1. **Navigate** to the page URL and take a full-page screenshot using `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_take_screenshot`, named using the same `{TC-ID}-{short-description}-{filename-timestamp}.png` pattern from Step 3.2 (filename timestamp obtained as defined in Step 3.0).
+1. **Navigate** to the page URL and take a full-page screenshot using `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_take_screenshot`, named and saved using the same `{TC-ID}-{short-description}-{filename-timestamp}.png` pattern and `evidences/` subfolder from Step 3.2 (filename timestamp obtained as defined in Step 3.0).
 2. **Retrieve the design reference** from the spec's `Pencil slide name / Figma frame URL` field:
    - **If it's a Figma URL** (contains `figma.com`): Use the **Figma MCP** tools to fetch the design frame. Extract the node ID from the URL and retrieve the frame's visual structure including components, layout, colors, typography, spacing, and hierarchy.
    - **If it's a Pencil slide name** (does not contain `figma.com`): Use the **Pencil MCP** tools to read the `.pen` file, locate the frame/slide by name using `batch_get` with a name pattern search, and extract its visual structure including components, layout, colors, typography, spacing, and hierarchy.
@@ -293,7 +293,7 @@ Include **only** if there are failed tests:
 **Expected result:** {Expected behavior}
 **Actual result:** {What actually happened}
 **Failure reason:** {Probable or technical cause}
-**Evidence:** {Screenshot filename}
+**Evidence:** {Screenshot path relative to the test cases file's directory, e.g. `evidences/TC-SMK-01-failure-step-20260703-143207.png`}
 ```
 
 #### 4.5 — Blocked Tests Details
@@ -323,14 +323,14 @@ Include **only** if any test case was skipped (`EXECUTION_LEVEL` < 3 excluded it
 
 #### 4.7 — Captured Screenshots
 
-Always include — list all captured screenshots:
+Always include — list all captured screenshots. Every `File` entry is a path relative to the test cases file's directory, always starting with `evidences/` since that is where every screenshot is saved (Step 3.2):
 
 ```markdown
 ## Captured Screenshots
 
-| File           | Description                              |
-| -------------- | ---------------------------------------- |
-| `filename.png` | Description of what the screenshot shows |
+| File                      | Description                              |
+| ------------------------- | ----------------------------------------- |
+| `evidences/filename.png`  | Description of what the screenshot shows |
 ```
 
 #### 4.8 — Design Comparison (include only if a TC-DC test case was executed)
@@ -363,7 +363,7 @@ Always include — list all captured screenshots:
 - **In the design**: {description of how it looks in the design}
 - **In the implementation**: {description of how it looks on the web}
 - **Affected component**: `<<component-id>>` or specific element
-- **Evidence**: {screenshot filename}
+- **Evidence**: {screenshot path relative to the test cases file's directory, e.g. `evidences/TC-DC-01-...png`}
 ```
 
 Repeat the "Discrepancy Details" block for each discrepancy found. If no discrepancies are found, write:

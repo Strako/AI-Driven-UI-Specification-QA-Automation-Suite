@@ -109,14 +109,18 @@ flowchart TD
 
     TC -->|"PostToolUse Write"| HOOK_TG["pipeline-on-tests-generated.sh"]
     HOOK_TG -->|"State: GENERATION_COMPLETE"| STATE_FILE
+    HOOK_TG -->|"mkdir -p"| EVID_DIR["Platform/{module}/evidences/"]
 
-    QAC -->|"PAUSE"| USER_FILL(["User fills test-data.md"])
-    USER_FILL -->|"done / ready"| HOOK_PROMPT["pipeline-on-user-prompt.sh"]
+    QAC -->|"Attempts dispatch\nimmediately after Stage 1"| HOOK_GATE{"PreToolUse:\npipeline-on-execution-dispatch.sh"}
+    HOOK_GATE -->|"auto mode"| TE
+    HOOK_GATE -->|"not auto,\ntest data unconfirmed"| ASK_DATA(["qa-coordinator asks:\nfill test-data.md, reply when ready"])
+    HOOK_GATE -->|"not auto, confirmed,\nEXECUTION_LEVEL known"| TE
+    HOOK_GATE -->|"not auto, confirmed,\nno level yet"| ASK_LEVEL(["qa-coordinator asks:\n1 Critical / 2 Critical+Mid / 3 All"])
+
+    ASK_DATA --> HOOK_PROMPT["pipeline-on-user-prompt.sh"]
     HOOK_PROMPT -->|"State: TEST_DATA_READY"| QAC
+    QAC -->|"Retry dispatch"| HOOK_GATE
 
-    QAC -->|"Attempts dispatch"| HOOK_GATE{"PreToolUse:\npipeline-on-execution-dispatch.sh"}
-    HOOK_GATE -->|"auto mode, or\nEXECUTION_LEVEL known"| TE
-    HOOK_GATE -->|"blocked: not auto mode,\nno level yet"| ASK_LEVEL(["qa-coordinator asks:\n1 Critical / 2 Critical+Mid / 3 All"])
     ASK_LEVEL --> HOOK_PROMPT
     HOOK_PROMPT -->|"State: AWAITING_EXECUTION_LEVEL\n→ resolved → TEST_DATA_READY"| QAC
     QAC -->|"Retry dispatch\nwith EXECUTION_LEVEL"| HOOK_GATE
@@ -137,8 +141,10 @@ flowchart TD
         DESIGN_MCP -->|"Figma URL"| FIGMA_MCP["Figma MCP"]
         DESIGN_MCP -->|"Pencil name"| PENCIL_MCP["Pencil MCP"]
         TE -->|"Write"| REPORT["test-report-module.md"]
-        TE -->|"Write"| SCREENSHOTS["TC-screenshots.png"]
+        TE -->|"Write"| SCREENSHOTS["evidences/TC-*.png"]
     end
+
+    EVID_DIR -.->|"already exists\nby the time TE runs"| SCREENSHOTS
 
     REPORT -->|"PostToolUse Write"| HOOK_RPT["pipeline-on-report-written.sh"]
     HOOK_RPT -->|"State: EXECUTION_COMPLETE"| STATE_FILE
@@ -203,7 +209,7 @@ tools: Read, Glob, Agent(test-generation, test-execution)
 ---
 ```
 
-The `Agent(test-generation, test-execution)` field is what permits this agent to invoke those two as sub-agents. Sub-agents are started by the orchestrator using the Agent tool — each runs in its own isolated context and returns a result. This means the orchestrator cannot pause a dispatched sub-agent mid-run to ask the human a question — only the orchestrator itself (a live, turn-by-turn conversation) can do that. `pipeline-on-execution-dispatch.sh` exploits the one place this constraint can still be worked around: a `PreToolUse` hook fires on the Agent-tool call itself, *before* the sub-agent starts, so it can block the call and hand the orchestrator a reason to ask first — see the [Execution Roughness Gate example](#example-from-this-project--pipeline-on-execution-dispatchsh-pretooluse-blocking) below.
+The `Agent(test-generation, test-execution)` field is what permits this agent to invoke those two as sub-agents. Sub-agents are started by the orchestrator using the Agent tool — each runs in its own isolated context and returns a result. This means the orchestrator cannot pause a dispatched sub-agent mid-run to ask the human a question — only the orchestrator itself (a live, turn-by-turn conversation) can do that. `pipeline-on-execution-dispatch.sh` exploits the one place this constraint can still be worked around: a `PreToolUse` hook fires on the Agent-tool call itself, *before* the sub-agent starts, so it can block the call and hand the orchestrator a reason to ask first — see the [test-data confirmation and execution roughness gate example](#example-from-this-project--pipeline-on-execution-dispatchsh-pretooluse-blocking) below.
 
 ### How agents are invoked
 
@@ -437,21 +443,32 @@ exit 0  # EXIT 0 = ALLOW
 
 ### Example from this project — `pipeline-on-execution-dispatch.sh` (PreToolUse, blocking)
 
-This hook gates `qa-coordinator`'s attempt to dispatch `test-execution`. It is the only hook in this plugin that reads `permission_mode` — that field is only present in `PreToolUse` payloads, not in `PostToolUse` or `UserPromptSubmit` ones, and **not at all** in `SubagentStart` (which also cannot block — exit code 2 there only prints a warning, the sub-agent spawns regardless). This is why the gate lives here instead of on `SubagentStart`, even though conceptually it's about "the test-execution stage starting":
+This hook gates every attempt by `qa-coordinator` to dispatch `test-execution`, running two ordered checks on the same `Agent`-tool call. It is the only hook in this plugin that reads `permission_mode` — that field is only present in `PreToolUse` payloads, not in `PostToolUse` or `UserPromptSubmit` ones, and **not at all** in `SubagentStart` (which also cannot block — exit code 2 there only prints a warning, the sub-agent spawns regardless). This is why the gate lives here instead of on `SubagentStart`, even though conceptually it's about "the test-execution stage starting":
 
 ```bash
 PERMISSION_MODE=$(echo "$INPUT" | python3 -c \
   "import sys,json; print(json.load(sys.stdin).get('permission_mode',''))")
 
-[[ "$PERMISSION_MODE" == "auto" ]] && exit 0   # auto mode: let it run everything
+# Auto mode skips BOTH gates below unconditionally — nobody is necessarily
+# watching to answer a question.
+[[ "$PERMISSION_MODE" == "auto" ]] && exit 0
 
-# Not auto mode and no EXECUTION_LEVEL yet — block and tell qa-coordinator to ask.
+# Gate 1 — has the user confirmed test-data.md is filled in for this module?
+# (State is GENERATION_COMPLETE right after test-cases.md was written, and
+# only advances to TEST_DATA_READY once the user replies "done"/"ready".)
+if [[ "$CURRENT_STATE" == "GENERATION_COMPLETE" && "$STATE_MODULE" == "$MODULE" ]]; then
+  echo "Ask the user to fill test-data.md and reply when ready, then retry." >&2
+  exit 2
+fi
+
+# Gate 2 — is the execution roughness level already known?
+echo "$PROMPT_TEXT" | grep -qE "EXECUTION_LEVEL:[[:space:]]*[123]" && exit 0
 printf "AWAITING_EXECUTION_LEVEL\n%s\n%s\n" "$MODULE" "$MODULE_DIR" > "$STATE_FILE"
 echo "Ask the user: 1 Critical / 2 Critical+Mid / 3 All, then retry with EXECUTION_LEVEL set." >&2
 exit 2
 ```
 
-`qa-coordinator` itself never sees `permission_mode` directly — the hook is the only thing that can, and it hands the decision back as plain-English feedback the agent then acts on conversationally, the same way it already reacts to the `test-data.md` pause instructions.
+`qa-coordinator` itself never sees `permission_mode` directly — the hook is the only thing that can, and it hands the decision back as plain-English feedback for whichever gate blocked, which the agent then acts on conversationally. This is deliberately a hard technical gate rather than a prose instruction the coordinator agent could rationalize skipping (e.g. by generalizing "auto mode = don't wait for a human" from Gate 2 to Gate 1) — it fires on the tool call itself, before the sub-agent ever starts.
 
 ---
 
@@ -560,34 +577,42 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │   │   ├── [AGENT] Assigns Severity (Critical/Mid/Low) to every test case
        │   │   ├── [AGENT] Write → test-cases.md
        │   │   │   └── [HOOK fires] pipeline-on-tests-generated.sh
-       │   │   │       └── State → GENERATION_COMPLETE
+       │   │   │       ├── State → GENERATION_COMPLETE
+       │   │   │       └── mkdir -p Platform/{module}/evidences/
+       │   │   │           (test-execution has no Bash/mkdir access, so this
+       │   │   │            hook creates the folder up front, deterministically)
        │   │   └── [AGENT] Write → test-data.md
        │   │       └── Reports SEVERITY_BREAKDOWN (Critical/Mid/Low counts) in its summary
        │   │
-       │   ├── [AGENT] qa-coordinator PAUSES
-       │   │   └── "Fill test-data.md and confirm when ready"
-       │   │
-       │   ├── USER → "done"
-       │   │   └── [HOOK fires] pipeline-on-user-prompt.sh
-       │   │       └── State = GENERATION_COMPLETE + "done" detected
-       │   │       └── State → TEST_DATA_READY
-       │   │       └── stdout: "Dispatch test-execution agent"
-       │   │           (this text is injected into Claude's context)
-       │   │
-       │   ├── [AGENT attempts dispatch] test-execution (sub-agent)
+       │   ├── [AGENT attempts dispatch immediately] test-execution (sub-agent)
        │   │   └── [HOOK fires] pipeline-on-execution-dispatch.sh (PreToolUse)
        │   │       ├── Reads permission_mode from the hook payload
-       │   │       ├── auto mode, or EXECUTION_LEVEL already in the prompt → exit 0, dispatch proceeds
-       │   │       └── otherwise → State → AWAITING_EXECUTION_LEVEL, exit 2 (BLOCKED)
-       │   │           │
-       │   │           ├── [AGENT] qa-coordinator asks: "1 Critical / 2 Critical+Mid / 3 All"
-       │   │           │
-       │   │           └── USER → "2"
-       │   │               └── [HOOK fires] pipeline-on-user-prompt.sh
-       │   │                   └── State = AWAITING_EXECUTION_LEVEL + "2" detected
-       │   │                   └── State → TEST_DATA_READY
-       │   │                   └── stdout: "Retry dispatch with EXECUTION_LEVEL = 2"
-       │   │                       (agent retries the Agent-tool call — hook now allows it through)
+       │   │       ├── auto mode → exit 0, dispatch proceeds straight through (both gates skipped)
+       │   │       │
+       │   │       ├── not auto mode, state = GENERATION_COMPLETE (test data unconfirmed)
+       │   │       │   → exit 2 (BLOCKED); state stays GENERATION_COMPLETE
+       │   │       │       │
+       │   │       │       ├── [AGENT] qa-coordinator asks: "Fill test-data.md and confirm when ready"
+       │   │       │       │
+       │   │       │       └── USER → "done"
+       │   │       │           └── [HOOK fires] pipeline-on-user-prompt.sh
+       │   │       │               └── State = GENERATION_COMPLETE + "done" detected
+       │   │       │               └── State → TEST_DATA_READY
+       │   │       │               └── stdout: "Dispatch test-execution agent"
+       │   │       │                   (this text is injected into Claude's context;
+       │   │       │                    agent retries the Agent-tool call)
+       │   │       │
+       │   │       └── not auto mode, test data confirmed, no EXECUTION_LEVEL yet
+       │   │           → exit 2 (BLOCKED); State → AWAITING_EXECUTION_LEVEL
+       │   │               │
+       │   │               ├── [AGENT] qa-coordinator asks: "1 Critical / 2 Critical+Mid / 3 All"
+       │   │               │
+       │   │               └── USER → "2"
+       │   │                   └── [HOOK fires] pipeline-on-user-prompt.sh
+       │   │                       └── State = AWAITING_EXECUTION_LEVEL + "2" detected
+       │   │                       └── State → TEST_DATA_READY
+       │   │                       └── stdout: "Retry dispatch with EXECUTION_LEVEL = 2"
+       │   │                           (agent retries the Agent-tool call — hook now allows it through)
        │   │
        │   └── [AGENT dispatches] test-execution (sub-agent)
        │       ├── [SKILL] Reads ${CLAUDE_PLUGIN_ROOT}/skills/test-execution:process/SKILL.md
@@ -620,7 +645,7 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │       │   │        (includes execution level, skipped tests, execution window)
        │       │   └── [HOOK fires] pipeline-on-report-written.sh
        │       │       └── State → EXECUTION_COMPLETE
-       │       └── [AGENT] Write → TC-*-{timestamp}.png (screenshots)
+       │       └── [AGENT] Write → Platform/{module}/evidences/TC-*-{timestamp}.png (screenshots)
        │
        └── [AGENT] qa-coordinator delivers final report
            └── "✅ QA Pipeline Complete"
@@ -646,14 +671,19 @@ stateDiagram-v2
     WIZARD_REQUESTED --> WIZARD_COMPLETE : spec-wizard-improve saves spec
     WIZARD_COMPLETE --> GENERATION_COMPLETE : test-generation writes test-cases.md
     PIPELINE_OFFER_REQUESTED --> GENERATION_COMPLETE : test-generation writes test-cases.md
-    GENERATION_COMPLETE --> TEST_DATA_READY : user says "done" / "ready"
-    TEST_DATA_READY --> EXECUTION_DISPATCH_ATTEMPTED : qa-coordinator attempts Agent-tool dispatch
+    GENERATION_COMPLETE --> EXECUTION_DISPATCH_ATTEMPTED : qa-coordinator attempts Agent-tool dispatch immediately
     note right of EXECUTION_DISPATCH_ATTEMPTED
-        pipeline-on-execution-dispatch.sh (PreToolUse) checks permission_mode.
-        Not a .pipeline-state entry — it's the moment the dispatch is attempted.
+        pipeline-on-execution-dispatch.sh (PreToolUse) checks permission_mode,
+        then test-data confirmation, then EXECUTION_LEVEL, in that order.
+        Not a .pipeline-state entry — it's the moment the dispatch is attempted,
+        and it can recur many times as each gate is satisfied.
     end note
-    EXECUTION_DISPATCH_ATTEMPTED --> EXECUTION_COMPLETE : auto mode, or EXECUTION_LEVEL already known — dispatch allowed, test-execution writes test-report
-    EXECUTION_DISPATCH_ATTEMPTED --> AWAITING_EXECUTION_LEVEL : not auto mode, no level yet — dispatch blocked (exit 2)
+    EXECUTION_DISPATCH_ATTEMPTED --> EXECUTION_COMPLETE : auto mode — both gates skipped, dispatch allowed, test-execution writes test-report
+    EXECUTION_DISPATCH_ATTEMPTED --> GENERATION_COMPLETE : not auto mode, test data not yet confirmed — dispatch blocked (exit 2), state unchanged
+    GENERATION_COMPLETE --> TEST_DATA_READY : user says "done" / "ready"
+    TEST_DATA_READY --> EXECUTION_DISPATCH_ATTEMPTED : qa-coordinator retries the dispatch
+    EXECUTION_DISPATCH_ATTEMPTED --> EXECUTION_COMPLETE : not auto mode, test data confirmed, EXECUTION_LEVEL already known — dispatch allowed
+    EXECUTION_DISPATCH_ATTEMPTED --> AWAITING_EXECUTION_LEVEL : not auto mode, test data confirmed, no level yet — dispatch blocked (exit 2)
     AWAITING_EXECUTION_LEVEL --> TEST_DATA_READY : user answers 1 / 2 / 3 — retry dispatch with EXECUTION_LEVEL set
     EXECUTION_COMPLETE --> [*]
 ```
