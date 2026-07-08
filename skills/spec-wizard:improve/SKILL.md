@@ -246,9 +246,20 @@ Print:
 
 ## Next Step — Always Required After Saving
 
-After the updated spec is written, you MUST immediately invoke the pipeline offer. Do not stop here.
+After the updated spec is written, you MUST immediately do one of the following. Do not stop here.
 
-Use the **Agent** tool now to dispatch the pipeline-offer agent:
+**If `CALLER` is present in your input** (dispatched by `qa-coordinator`): skip the pipeline-offer dispatch entirely — `qa-coordinator` always continues into the full pipeline on its own once you're done, and asking to run the pipeline here would be a redundant question that doesn't belong in that flow. Instead output:
+
+```
+---WIZARD-COMPLETE---
+SPEC_FILE: {SPEC_FILE}
+MODULE: {module-name}
+---WIZARD-COMPLETE-END---
+```
+
+followed by a brief one-line human-readable summary, and stop — control returns to `CALLER`.
+
+**Otherwise** (a human invoked you directly, standalone): use the **Agent** tool now to dispatch the pipeline-offer agent:
 
 ```
 Dispatch subagent: spec-wizard-pipeline
@@ -259,4 +270,4 @@ PROJECT_ROOT: {project-root}
 Show the spec summary and offer the QA pipeline for the spec above.
 ```
 
-> This step is mandatory. Never end the conversation after the wizard without dispatching it. Do not try to invoke `spec-wizard:pipeline-offer` via the Skill tool — this agent's `tools:` frontmatter does not grant Skill access, so that path is a dead end. Always dispatch the dedicated `spec-wizard-pipeline` agent via the Agent tool instead.
+> This step is mandatory — never end the conversation after the wizard without completing it. Do not try to invoke `spec-wizard:pipeline-offer` via the Skill tool — this agent's `tools:` frontmatter does not grant Skill access, so that path is a dead end. Always dispatch the dedicated `spec-wizard-pipeline` agent via the Agent tool instead.

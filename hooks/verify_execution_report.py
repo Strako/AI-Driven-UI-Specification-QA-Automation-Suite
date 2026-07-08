@@ -267,13 +267,14 @@ def build_fallback_report(report_path, fields, evidences_dir, real_shots):
 
         lines.append(f"## {category} (recovered from evidence)")
         lines.append("")
-        lines.append("| ID | Description | Result | Detail |")
-        lines.append("| --- | --- | --- | --- |")
+        lines.append("| ID | Description | Result | Timestamp | Evidence | Detail |")
+        lines.append("| --- | --- | --- | --- | --- | --- |")
         for tc_id, files in sorted(entries):
             file_links = ", ".join(f"`evidences/{f}`" for f in files)
             lines.append(
                 f"| {tc_id} | (unavailable — recovered from evidence only) | ❓ UNKNOWN | "
-                f"Reconstructed from evidence screenshot(s) on disk: {file_links}. Original "
+                f"unavailable | {file_links} | "
+                f"Reconstructed from evidence screenshot(s) on disk. Original "
                 f"pass/fail result unavailable because the agent did not persist a valid "
                 f"report; inspect the screenshot(s) for the actual end state. |"
             )

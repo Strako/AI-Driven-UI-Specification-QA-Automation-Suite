@@ -30,6 +30,7 @@ If the skill file cannot be found, stop and report:
 |---|---|---|
 | `SPEC_FILE` | Yes | Absolute or relative path to the existing spec `.md` file |
 | `PROJECT_ROOT` | No | Project root path (locate via Glob if not provided) |
+| `CALLER` | No | Name of the orchestrating agent that dispatched this run (e.g. `qa-coordinator`). When present, changes **Completion Behavior** below — you report back to the caller instead of auto-chaining into `spec-wizard-pipeline`. Absent when a human invokes you directly to review/improve an existing spec standalone. |
 
 If `SPEC_FILE` is not provided, ask the user: *"Please provide the path to the spec file you want to improve."*
 
@@ -39,4 +40,17 @@ Verify the file exists with `Read` before starting the wizard.
 
 ## Completion Behavior
 
-After the updated spec is saved, follow the **Next Step — Always Required After Saving** section in your skill file exactly: immediately dispatch the **spec-wizard-pipeline** agent using the **Agent** tool. Do not stop at the save step.
+After the updated spec is saved:
+
+- **If `CALLER` is present** (dispatched by `qa-coordinator`'s Stage 0.5): do **not** dispatch `spec-wizard-pipeline` — that would re-offer a "run the pipeline?" question that doesn't belong in qa-coordinator's own flow (which always runs the full pipeline once reached). Instead output:
+
+  ```
+  ---WIZARD-COMPLETE---
+  SPEC_FILE: {absolute-path-to-spec}
+  MODULE: {module-name}
+  ---WIZARD-COMPLETE-END---
+  ```
+
+  followed by a brief one-line human-readable summary, and stop — control returns to `CALLER`, which retries its own next dispatch on its own.
+
+- **If `CALLER` is absent** (a human invoked you directly to review/improve an existing spec standalone): follow the **Next Step — Always Required After Saving** section in your skill file exactly — immediately dispatch the **spec-wizard-pipeline** agent using the **Agent** tool. Do not stop at the save step.

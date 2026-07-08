@@ -147,6 +147,7 @@ Whenever a step or expected result requires checking an OTP, verification code, 
 - Before capturing each screenshot, obtain a **filename timestamp** as defined in Step 3.0.
 - Name screenshots using the pattern: `{TC-ID}-{short-description}-{filename-timestamp}.png` (e.g. `TC-SMK-01-page-loaded-20260703-143205.png`, and for a failure step `TC-SMK-01-failure-step-20260703-143207.png`).
 - Save all screenshots inside an **`evidences/`** subfolder of the test cases file's directory — never directly in the module folder. Pass the `filename` parameter of `browser_take_screenshot` as the full path `{absolute directory of the test cases file}/evidences/{TC-ID}-{short-description}-{filename-timestamp}.png`. This subfolder is created automatically by the `pipeline-on-tests-generated.sh` hook when `test-cases.md` is written, so it already exists by the time execution starts — do not attempt to create it yourself (this agent has no `Bash`/mkdir access).
+- Immediately after capturing the end-of-test screenshot (whether PASS or FAIL), obtain a **report timestamp** as defined in Step 3.0 and record it as this test case's own `TC_TIMESTAMP` — every executed test case gets one, distinct from the two overall `EXECUTION_STARTED`/`EXECUTION_COMPLETED` timestamps. `⚠️ BLOCKED` and `⏭ SKIPPED` cases have no `TC_TIMESTAMP` since they never execute.
 
 #### 3.3 — Design Comparison execution (TC-DC type)
 
@@ -188,13 +189,18 @@ Classify each test case result as:
 | BLOCKED | ⚠️    | Test cannot be executed due to environment, data, or tooling limitations |
 | SKIPPED | ⏭    | Excluded by the configured `EXECUTION_LEVEL` (Step 2a) — never executed  |
 
-For **FAIL** results, record:
+For **every executed test case** (✅ PASS or ❌ FAIL), record — both go directly into that test case's row in its section table (Step 4.3):
+
+- Its **`TC_TIMESTAMP`** (Step 3.2)
+- Its end-of-test **screenshot filename** as evidence (`evidences/{filename}`)
+
+For **FAIL** results, additionally record (for Failure Details, Step 4.4):
 
 - The **exact step** where the error occurred
 - The **expected result** (from the test case)
 - The **actual result** (what was observed)
 - The **probable cause** of the failure
-- The **screenshot filename** as evidence
+- The **failure-step screenshot filename** as evidence (distinct from the end-of-test one above)
 
 For **BLOCKED** results, record:
 
@@ -268,16 +274,18 @@ Always create the following five sections, even if all tests pass:
 Each section must:
 
 - Show a summary line: `(X/Y ✅)` if all executed tests pass, `(X/Y — N failed)` if any failed, appending `, Z ⏭ skipped` whenever this section has any skipped test case — e.g. `(X/Y ✅, Z ⏭ skipped)`. `Y` here is the executed count (Total minus Skipped for this section).
-- Include a table with columns: `| ID | Description | Result | Detail |`
+- Include a table with columns: `| ID | Description | Result | Timestamp | Evidence | Detail |`
+- The **Timestamp** column holds that test case's own `TC_TIMESTAMP` (Step 3.2/3.4) for an executed (✅/❌) row, or `—` for `⚠️ BLOCKED` / `⏭ SKIPPED` rows (they never execute, so they have none).
+- The **Evidence** column holds the end-of-test screenshot's path relative to the test cases file's directory (always `evidences/{filename}`, per Step 3.2) for an executed row, or `—` for `⚠️ BLOCKED` / `⏭ SKIPPED` rows. For a ❌ FAIL row, this is the end-of-test screenshot specifically — the additional failure-step screenshot is referenced separately in Failure Details (4.4), not here.
 - The **Detail** column must explain what was validated and what occurred — clear, concise, and verifiable. For a `⏭ SKIPPED` row, the Detail column states the reason from Step 3.4.
 
 ```markdown
 ## SMOKE TESTS (X/Y ✅, Z ⏭ skipped)
 
-| ID        | Description | Result     | Detail                                      |
-| --------- | ----------- | ---------- | -------------------------------------------- |
-| TC-SMK-01 | Description | ✅ PASS    | What was verified and observed               |
-| TC-SMK-02 | Description | ⏭ SKIPPED | Below configured execution level (1)         |
+| ID        | Description | Result     | Timestamp           | Evidence                                    | Detail                                |
+| --------- | ----------- | ---------- | -------------------- | -------------------------------------------- | -------------------------------------- |
+| TC-SMK-01 | Description | ✅ PASS    | 2026-07-03 14:32:05 | `evidences/TC-SMK-01-page-loaded-20260703-143205.png` | What was verified and observed        |
+| TC-SMK-02 | Description | ⏭ SKIPPED | —                     | —                                             | Below configured execution level (1)  |
 ```
 
 #### 4.4 — Failure Details
@@ -386,6 +394,7 @@ The report **MUST** comply with these rules:
 - Keep section names in UPPERCASE where specified.
 - Include aggregate metrics (totals, success rate — computed over executed test cases only, excluding skipped ones).
 - Include the `EXECUTION_STARTED` / `EXECUTION_COMPLETED` report timestamps (Step 3.0) in the header and Executive Summary, and a filename timestamp on every captured screenshot (Step 3.2). Never omit them.
+- Include every executed test case's own `TC_TIMESTAMP` and evidence file path directly in its section-table row (Timestamp / Evidence columns, Step 4.3) — never rely on the Captured Screenshots table (4.7) alone to establish that link.
 - Include the `EXECUTION_LEVEL` used (Step 2a) in the Executive Summary, and never silently drop a skipped test case from its section table or from **Skipped Tests Details** (4.6).
 - Write in **technical English**.
 - TC IDs must follow the format from the test cases file (e.g. `TC-SMK-01`, `TC-HP-01`, `TC-001`).

@@ -45,41 +45,49 @@ Route      : {/route}  →  {https://full-url}
 
 ---
 
-## Step 3 — Offer the QA Pipeline
+## Step 3 — Attempt the default dispatch immediately
 
-Print:
-
-```
-🚀  Run the Full QA Pipeline?
-
-  1. Generate test cases  →  test-cases.md  (data-agnostic, all coverage types)
-  2. Generate test data   →  test-data.md   (fillable template — you fill values)
-  3. Pause for you to fill in test-data.md
-  4. Execute all tests via Playwright MCP
-  5. Deliver the execution report with PASS / FAIL / BLOCKED breakdown
-
-Reply  yes  to start, or  no  to stop here.
-```
-
----
-
-## Step 4 — Handle Response
-
-### If **yes**:
-
-Dispatch the **qa-coordinator** agent using the Agent tool:
+Do not print any question first. Use the Agent tool right away to dispatch **qa-coordinator**, exactly as if the user had already answered "yes":
 
 ```
 SPEC_FILE: {absolute path to spec file}
 PROJECT_ROOT: {absolute path to project root — directory containing vars.md and TEMPLATE.md}
 BROWSER_MODE: headed
+PIPELINE_STAGE: pipeline-offer
 
 Run the full QA pipeline for the spec above.
 ```
 
-### If **no**:
+The `PreToolUse` hook `pipeline-on-spec-dispatch.sh` is the actual gate for this decision, because it is the only place that can see whether Claude Code's "auto" permission mode is active (you cannot detect this yourself):
 
-Print:
+- **If the dispatch goes through** — the session is in auto mode. Proceed straight to the full pipeline and wait for qa-coordinator's result normally; do not print the offer below at all.
+- **If the dispatch is blocked** — the session is not in auto mode. The hook's feedback tells you to stop and print:
+
+  ```
+  🚀  Run the Full QA Pipeline?
+
+    1. Generate test cases  →  test-cases.md  (data-agnostic, all coverage types)
+    2. Generate test data   →  test-data.md   (fillable template — you fill values)
+    3. Pause for you to fill in test-data.md
+    4. Execute all tests via Playwright MCP
+    5. Deliver the execution report with PASS / FAIL / BLOCKED breakdown
+
+  Reply  yes  to start, or  no  to stop here.
+  ```
+
+  **Do not retry the dispatch until the user replies.** The `UserPromptSubmit` hook recognizes yes/no here and tells you what to do next.
+
+---
+
+## Step 4 — Handle Response
+
+### If the hook tells you the user said **yes**:
+
+Retry the exact same dispatch from Step 3 (including the `PIPELINE_STAGE: pipeline-offer` line) — it is now unblocked.
+
+### If the hook tells you the user said **no**:
+
+Do not retry the dispatch. Print:
 ```
 ✅  Spec complete: {SPEC_FILE}
 

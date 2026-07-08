@@ -13,7 +13,7 @@ Before generating anything, read the following files in order:
 1. The UI screen specification file indicated by `SPEC_FILE` (or the file the user referenced).
 2. Every spec file listed under **Related Views → Spec File** in that specification. Read each one fully to understand its view ID, components, fields, validations, and flow.
 
-> This skill never reads `BASE_URL` from `vars.md` and never resolves it into a concrete domain. Test cases reference views and URLs symbolically (`<<view-id>>` / `{{BASE_URL}}`) so the same `test-cases.md` can run against any environment without regeneration — the actual `BASE_URL` value is looked up only at execution time, by the test-execution skill.
+> This skill never reads `BASE_URL` from `vars.md` and never resolves it into a concrete domain in `test-cases.md`. Test cases reference views and URLs symbolically (`<<view-id>>` / `{{BASE_URL}}`) so the same `test-cases.md` can run against any environment without regeneration — the actual `BASE_URL` value is looked up only at execution time, by the test-execution skill. The one exception is `test-data.md` generation under `AUTO_FILL_TEST_DATA` (Step 5), which does read `vars.md` — but only to resolve named credential variables into `test-data.md`, never `BASE_URL`, and never into `test-cases.md` itself.
 
 ---
 
@@ -105,9 +105,11 @@ Rules:
 
 - Organize by scenario using the same TC IDs and titles from Artifact 1.
 - Under each scenario, group fields by their source view using `<<view-id>>` as a section header.
-- List every `${field-name}` referenced in the test case under the correct view section, with an empty fill-in slot.
+- List every `${field-name}` referenced in the test case under the correct view section.
 - Preserve the exact `${field-name}` identifiers from the spec — do not rename or alias them.
 - Include only test cases that require input data; omit test cases with no field interactions.
+
+**If `AUTO_FILL_TEST_DATA` is absent or not `true`** (the default): leave every field as an empty fill-in slot, exactly as below — a human will fill it in before execution.
 
 ```
 # Test Data — <<view-id>>
@@ -128,6 +130,16 @@ Rules:
 - ${field-name}:
 ```
 
+**If `AUTO_FILL_TEST_DATA` is `true`**: fill every field with a concrete value instead of leaving it blank, using this order of precedence:
+
+1. **Signup/registration credential fields** (per the "Account-creation and credential fields" rule in Step 2 above) — leave these blank regardless of `AUTO_FILL_TEST_DATA`. `test-execution` generates and confirms a fresh Yopmail identity for these at run time; writing a fabricated value here would only be overwritten or, worse, collide with that flow.
+2. **Other credential-like fields tied to a named variable already resolvable from `vars.md`** (e.g. a login field whose precondition or component description references `{{AUTH_EMAIL}}`, `{{CLIENT_EMAIL}}`, or any other `{{VARIABLE_NAME}}` token from the spec's Business Rules): use `Read` on `vars.md` (path given by `PROJECT_ROOT`) and:
+   - If the variable already holds a real (non-placeholder) value, write that literal value.
+   - If it is still a placeholder, leave the field blank — fabricating a credential here would not match whatever account actually exists (or will be created) in the target application.
+3. **Every other field** — infer a single plausible, realistic value from the field's name, type, and the spec's description/validation rules for it. Respect any stated format or constraint (e.g. a validated email field gets a well-formed email; a numeric field gets a number inside any stated range; a dropdown/select gets one of its documented options; a date field gets a plausible date in the format implied by the field). When nothing more specific is implied, prefer an unambiguous, obviously-a-test-value string (e.g. `Test Company Inc.`, `Test User`, `555-0100`) over something that could pass as real personal data.
+
+Whether or not `AUTO_FILL_TEST_DATA` was set, the file's structure (headers, TC IDs, view sections, field list) is identical — only whether the value after `${field-name}:` is empty or filled in differs.
+
 Repeat for each test case that requires input data.
 
 ---
@@ -137,6 +149,6 @@ Repeat for each test case that requires input data.
 Once both files are written, output the structured `---GENERATION-COMPLETE---` block as defined in the agent instructions, then provide a human-readable summary:
 
 - Path to `test-cases.md` and total number of test cases generated, broken down by type and by severity (Critical/Mid/Low).
-- Path to `test-data.md` and total number of scenarios included.
+- Path to `test-data.md`, total number of scenarios included, and whether it was auto-filled (`AUTO_FILL_TEST_DATA`) or left blank for manual completion.
 - Any related view spec files that were read and incorporated into cross-view test cases.
 - Any assumptions made due to ambiguity in the spec (if any).

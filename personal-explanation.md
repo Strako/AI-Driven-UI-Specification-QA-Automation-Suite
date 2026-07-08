@@ -47,7 +47,10 @@ Only a small number of files are project-owned and genuinely live in the consumi
 
 ```mermaid
 flowchart TD
-    USER(["User"]) -->|"Invokes spec-wizard-generate"| SWG
+    USER(["User"]) -->|"'Create a spec for X'"| QAC0{"Agent-tool dispatch\nattempted"}
+    QAC0 -->|"subagent_type =\nspec-wizard-generate,\nno CALLER marker"| HOOK_REDIRECT{"PreToolUse:\npipeline-on-spec-dispatch.sh\n(entry-point redirect)"}
+    HOOK_REDIRECT -->|"BLOCKED\n(always — not mode-dependent)"| QAC
+    QAC -->|"Stage 0 bootstrap:\ndispatches spec-wizard-generate\nWITH CALLER: qa-coordinator"| SWG
 
     subgraph SPEC_CREATION["STAGE 1 - Spec Creation"]
         SWG[/"spec-wizard-generate\nAgent Opus"/]
@@ -55,44 +58,50 @@ flowchart TD
         SKILL_AG -->|"Instructions"| SWG
         SWG -->|"MCP Tool Calls"| PW1["Playwright MCP headed"]
         PW1 -->|"DOM + Screenshots"| SWG
-        SWG -->|"Spec in memory\n(Phase AUTO)"| REQ_PROMPT
+        SWG -->|"Spec in memory\n(Phase AUTO)"| WRITE_SPEC
 
-        REQ_PROMPT{{"Requirements\nenrichment?"}}
-        REQ_PROMPT -->|"file path"| REQ_FILE["Reads requirements file"]
-        REQ_PROMPT -->|"docs"| REQ_DOCS["Scans docs/ folder\n(root = dir of vars.md)"]
-        REQ_PROMPT -->|"skip"| WRITE_SPEC
-        REQ_FILE -->|"Filters relevant\nRefines spec in memory"| WRITE_SPEC
-        REQ_DOCS -->|"Filters relevant\nRefines spec in memory"| WRITE_SPEC
-
-        WRITE_SPEC["Write tool →\nmodule-description.md"]
-        WRITE_SPEC -->|"Writes enriched spec"| SPEC_FILE["module-description.md"]
+        WRITE_SPEC["Write tool attempted →\nmodule-description.md"]
     end
+
+    WRITE_SPEC -->|"PreToolUse Write"| HOOK_WGATE{"pipeline-on-spec-write-gate.sh\n(docs/ enrichment gate)"}
+    HOOK_WGATE -->|"file already exists,\nor bootstrap marker,\nor docs/ has nothing readable"| SPEC_FILE["module-description.md"]
+    HOOK_WGATE -->|"first save, no bootstrap,\ndocs/ has .md or .csv files\n(NOT mode-dependent)"| SCAN_DOCS["Agent silently scans docs/,\napplies relevant requirements\nin memory — no question asked"]
+    SCAN_DOCS -->|"retries Write"| WRITE_SPEC
 
     SPEC_FILE -->|"PostToolUse Write"| HOOK_SPEC["pipeline-on-spec-created.sh"]
     HOOK_SPEC -->|"State: SPEC_AUTO_GENERATED"| STATE_FILE[".pipeline-state"]
 
-    SWG -->|"Asks: improvement wizard?"| USER_CHOICE{{"yes / no"}}
-    USER_CHOICE -->|"yes"| SWI
-    USER_CHOICE -->|"no"| SWP
+    SWG -->|"Reports back with ---SPEC-GENERATED---\n(never dispatches another agent itself)"| QAC
 
-    subgraph SPEC_IMPROVE["STAGE 1b - Spec Improvement"]
+    QAC -->|"Attempts Stage 1 (test-generation) dispatch\nimmediately — no question asked itself"| HOOK_WOGATE{"PreToolUse:\npipeline-on-spec-dispatch.sh\n(wizard-offer gate, gates\nqa-coordinator's OWN dispatch)"}
+    HOOK_WOGATE -->|"not freshly bootstrapped this run,\nOR already resolved,\nOR auto mode"| TG
+    HOOK_WOGATE -->|"freshly bootstrapped,\nnot auto, not yet answered"| ASK_WIZARD(["qa-coordinator asks:\nrun improvement wizard first? yes/no"])
+    ASK_WIZARD --> HOOK_PROMPT["pipeline-on-user-prompt.sh"]
+    HOOK_PROMPT -->|"State: WIZARD_REQUESTED\n(yes) → qa-coordinator dispatches\nspec-wizard-improve"| SWI
+    HOOK_PROMPT -->|"State: WIZARD_OFFER_ANSWERED\n(no) → retry Stage 1 dispatch"| HOOK_WOGATE
+
+    subgraph SPEC_IMPROVE["STAGE 1b - Spec Improvement (optional)"]
         SWI[/"spec-wizard-improve\nAgent Opus"/]
         SWI -->|"Reads"| SKILL_IMP["spec-wizard:improve\nSKILL.md"]
         SKILL_IMP -->|"9 interactive sections"| SWI
-        SWI -->|"Overwrites"| SPEC_FILE
+        SWI -->|"Overwrites\n(gate bypassed: file exists)"| SPEC_FILE
     end
 
-    SWI --> SWP
+    SWI -->|"CALLER=qa-coordinator present:\nreports back with ---WIZARD-COMPLETE---\n(never dispatches spec-wizard-pipeline\nin this case)"| QAC
+    QAC -->|"Retries Stage 1 dispatch\n(now unblocked — state moved to\nWIZARD_COMPLETE)"| HOOK_WOGATE
 
-    subgraph PIPELINE_OFFER["STAGE 1c - Pipeline Offer"]
-        SWP[/"spec-wizard-pipeline\nAgent Opus"/]
+    subgraph STANDALONE["STANDALONE PATH — explicit individual-agent use only, NOT part\nof qa-coordinator's default flow"]
+        USER_STANDALONE(["User explicitly invokes\nspec-wizard-improve or\nspec-wizard-pipeline BY NAME\non an existing spec"]) --> SWI_STANDALONE["spec-wizard-improve\n(CALLER absent)"]
+        SWI_STANDALONE -->|"Saves, then auto-dispatches\n(CALLER absent → old behavior)"| SWP[/"spec-wizard-pipeline\nAgent Opus"/]
         SWP -->|"Reads"| SKILL_PO["spec-wizard:pipeline-offer\nSKILL.md"]
-        SKILL_PO -->|"Summary + Offer"| SWP
+        SKILL_PO -->|"Summary"| SWP
+        SWP -->|"Attempts dispatch\nimmediately, no question asked"| HOOK_POGATE{"PreToolUse:\npipeline-on-spec-dispatch.sh\n(pipeline-offer gate)"}
+        HOOK_POGATE -->|"auto mode"| QAC_STANDALONE["qa-coordinator\n(new instance)"]
+        HOOK_POGATE -->|"not auto,\nnot yet answered"| ASK_PIPELINE(["spec-wizard-pipeline asks:\nrun full QA pipeline? yes/no —\na REAL fork, unlike the default flow"])
+        ASK_PIPELINE --> HOOK_PROMPT3["pipeline-on-user-prompt.sh"]
+        HOOK_PROMPT3 -->|"State: (no) → stop"| DONE_SPEC(["Spec complete — pipeline NOT run"])
+        HOOK_PROMPT3 -->|"State: QA_PIPELINE_CONFIRMED\n(yes) → retry dispatch"| HOOK_POGATE
     end
-
-    SWP -->|"Run QA Pipeline?"| PIPELINE_CHOICE{{"yes / no"}}
-    PIPELINE_CHOICE -->|"no"| DONE_SPEC(["Spec complete"])
-    PIPELINE_CHOICE -->|"yes"| QAC
 
     subgraph QA_PIPELINE["STAGE 2 - QA Pipeline"]
         QAC[/"qa-coordinator\nAgent Opus"/]
@@ -112,10 +121,10 @@ flowchart TD
     HOOK_TG -->|"mkdir -p"| EVID_DIR["Platform/{module}/evidences/"]
 
     QAC -->|"Attempts dispatch\nimmediately after Stage 1"| HOOK_GATE{"PreToolUse:\npipeline-on-execution-dispatch.sh"}
-    HOOK_GATE -->|"auto mode"| TE
-    HOOK_GATE -->|"not auto,\ntest data unconfirmed"| ASK_DATA(["qa-coordinator asks:\nfill test-data.md, reply when ready"])
-    HOOK_GATE -->|"not auto, confirmed,\nEXECUTION_LEVEL known"| TE
-    HOOK_GATE -->|"not auto, confirmed,\nno level yet"| ASK_LEVEL(["qa-coordinator asks:\n1 Critical / 2 Critical+Mid / 3 All"])
+    HOOK_GATE -->|"AUTO_TEST_DATA: true present\n(explicit upfront request —\nNOT just auto mode)"| GATE2{"Gate 2 check"}
+    HOOK_GATE -->|"no AUTO_TEST_DATA marker,\ntest data unconfirmed\n(blocks even in auto mode)"| ASK_DATA(["qa-coordinator asks:\nfill test-data.md, reply when ready"])
+    GATE2 -->|"EXECUTION_LEVEL known,\nor auto mode"| TE
+    GATE2 -->|"not auto mode,\nno level yet"| ASK_LEVEL(["qa-coordinator asks:\n1 Critical / 2 Critical+Mid / 3 All"])
 
     ASK_DATA --> HOOK_PROMPT["pipeline-on-user-prompt.sh"]
     HOOK_PROMPT -->|"State: TEST_DATA_READY"| QAC
@@ -220,7 +229,7 @@ The `Agent(test-generation, test-execution)` field is what permits this agent to
 ### How agents are invoked
 
 1. **Automatically**: Claude decides to delegate based on the `description` field
-2. **Explicitly**: the user switches to the agent or says "use spec-wizard-generate"
+2. **Explicitly**: the user switches to the agent or says "use spec-wizard-improve" (note: `spec-wizard-generate` specifically can no longer be reached this way — `pipeline-on-spec-dispatch.sh` redirects any direct dispatch of it to `qa-coordinator`, since it's only ever meant to run as qa-coordinator's own Stage 0 sub-agent)
 3. **From another agent**: using `Agent(name)` in the tools field and calling the Agent tool
 4. **As the main session**: `claude --agent my-agent`
 
@@ -449,32 +458,34 @@ exit 0  # EXIT 0 = ALLOW
 
 ### Example from this project — `pipeline-on-execution-dispatch.sh` (PreToolUse, blocking)
 
-This hook gates every attempt by `qa-coordinator` to dispatch `test-execution`, running two ordered checks on the same `Agent`-tool call. It is the only hook in this plugin that reads `permission_mode` — that field is only present in `PreToolUse` payloads, not in `PostToolUse` or `UserPromptSubmit` ones, and **not at all** in `SubagentStart` (which also cannot block — exit code 2 there only prints a warning, the sub-agent spawns regardless). This is why the gate lives here instead of on `SubagentStart`, even though conceptually it's about "the test-execution stage starting":
+This hook gates every attempt by `qa-coordinator` to dispatch `test-execution`, running two ordered checks on the same `Agent`-tool call. It was the first hook in this plugin to read `permission_mode`, and the pattern it established was later reused by `pipeline-on-spec-dispatch.sh` (the wizard-offer and pipeline-offer gates) and `pipeline-on-spec-write-gate.sh` (the requirements-enrichment gate) — see [Section 5](#5-the-pipeline-state-machine). `permission_mode` is only present in `PreToolUse` payloads, not in `PostToolUse` or `UserPromptSubmit` ones, and **not at all** in `SubagentStart` (which also cannot block — exit code 2 there only prints a warning, the sub-agent spawns regardless). This is why every one of these gates lives on `PreToolUse` instead of on `SubagentStart`, even though conceptually each is about "the next stage starting":
 
 ```bash
-PERMISSION_MODE=$(echo "$INPUT" | python3 -c \
-  "import sys,json; print(json.load(sys.stdin).get('permission_mode',''))")
-
-# Auto mode skips BOTH gates below unconditionally — nobody is necessarily
-# watching to answer a question.
-[[ "$PERMISSION_MODE" == "auto" ]] && exit 0
-
 # Gate 1 — has the user confirmed test-data.md is filled in for this module?
-# (State is GENERATION_COMPLETE right after test-cases.md was written, and
-# only advances to TEST_DATA_READY once the user replies "done"/"ready".)
-if [[ "$CURRENT_STATE" == "GENERATION_COMPLETE" && "$STATE_MODULE" == "$MODULE" ]]; then
-  echo "Ask the user to fill test-data.md and reply when ready, then retry." >&2
-  exit 2
+# Deliberately NOT keyed on permission_mode — only an explicit upfront
+# auto-fill request (AUTO_TEST_DATA: true on the dispatch prompt) bypasses it.
+if ! echo "$PROMPT_TEXT" | grep -qE "AUTO_TEST_DATA:[[:space:]]*true"; then
+  if [[ "$CURRENT_STATE" == "GENERATION_COMPLETE" && "$STATE_MODULE" == "$MODULE" ]]; then
+    echo "Ask the user to fill test-data.md and reply when ready, then retry." >&2
+    exit 2
+  fi
 fi
 
 # Gate 2 — is the execution roughness level already known?
 echo "$PROMPT_TEXT" | grep -qE "EXECUTION_LEVEL:[[:space:]]*[123]" && exit 0
+
+PERMISSION_MODE=$(echo "$INPUT" | python3 -c \
+  "import sys,json; print(json.load(sys.stdin).get('permission_mode',''))")
+
+# Only Gate 2 reads permission_mode — auto mode defaults to running everything.
+[[ "$PERMISSION_MODE" == "auto" ]] && exit 0
+
 printf "AWAITING_EXECUTION_LEVEL\n%s\n%s\n" "$MODULE" "$MODULE_DIR" > "$STATE_FILE"
 echo "Ask the user: 1 Critical / 2 Critical+Mid / 3 All, then retry with EXECUTION_LEVEL set." >&2
 exit 2
 ```
 
-`qa-coordinator` itself never sees `permission_mode` directly — the hook is the only thing that can, and it hands the decision back as plain-English feedback for whichever gate blocked, which the agent then acts on conversationally. This is deliberately a hard technical gate rather than a prose instruction the coordinator agent could rationalize skipping (e.g. by generalizing "auto mode = don't wait for a human" from Gate 2 to Gate 1) — it fires on the tool call itself, before the sub-agent ever starts.
+`qa-coordinator` itself never sees `permission_mode` directly — the hook is the only thing that can, and it hands the decision back as plain-English feedback for whichever gate blocked, which the agent then acts on conversationally. Notice the two gates are **deliberately asymmetric**: Gate 1 ignores `permission_mode` entirely (running tests against unconfirmed data is exactly what it exists to prevent, auto session or not), while Gate 2 treats auto mode as "run everything." This is a hard technical gate rather than a prose instruction the coordinator agent could rationalize skipping (e.g. by generalizing "auto mode = don't wait for a human" from Gate 2 to Gate 1, which is precisely the bug this asymmetric design prevents) — it fires on the tool call itself, before the sub-agent ever starts.
 
 ---
 
@@ -529,53 +540,122 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
 ```
 1. USER → "Create a spec for /dashboard"
    │
-   ├── [AGENT] spec-wizard-generate activates
+   ├── [Agent tool] dispatch attempted with subagent_type = spec-wizard-generate
+   │   │   (this is what happens if a human, or the top-level model, tries to
+   │   │    invoke spec-wizard-generate directly for this request)
+   │   │
+   │   └── [HOOK fires, PreToolUse] pipeline-on-spec-dispatch.sh (entry-point redirect)
+   │       ├── No "CALLER: qa-coordinator" in the dispatch prompt → BLOCKS (exit 2),
+   │       │   regardless of permission_mode — this is a routing rule, not a
+   │       │   "wait for a human" concern
+   │       └── Tells the model: dispatch qa-coordinator instead, verbatim request
+   │
+   ├── [AGENT] qa-coordinator activates instead
+   │   ├── Reads vars.md → BASE_URL + credentials
+   │   ├── No matching spec file found → Stage 0 — Spec Bootstrap
+   │   └── [AGENT dispatches] spec-wizard-generate, this time WITH
+   │       "CALLER: qa-coordinator" in the prompt — passes Gate 0 above
+   │
+   ├── [AGENT] spec-wizard-generate activates (dispatched by qa-coordinator)
    │   │
    │   ├── [SKILL] Reads ${CLAUDE_PLUGIN_ROOT}/skills/spec-wizard:auto-generate/SKILL.md
    │   │   └── Now knows exactly what to do (phases 0 → AUTO → REQUIREMENTS → Write)
    │   │
-   │   ├── [AGENT] Phase 0: Collects inputs from user
-   │   ├── [AGENT] Reads vars.md → extracts BASE_URL + credentials
+   │   ├── [AGENT] Phase 0: CALLER present → skip interactive input collection,
+   │   │   │   use only the inputs qa-coordinator already supplied
+   │   │   ├── [AGENT] Reads vars.md → extracts BASE_URL + credentials
    │   ├── [AGENT] Phase 1: Navigates with Playwright MCP
    │   │   └── browser_navigate → browser_snapshot → browser_take_screenshot
    │   ├── [AGENT] Phase AUTO: Generates complete spec IN MEMORY
    │   │
-   │   ├── [AGENT] Phase REQUIREMENTS: Requirements enrichment
-   │   │   └── Asks user: "file path / docs / skip?"
-   │   │
-   │   │   ├── USER → "/path/to/requirements.md" (or "docs")
-   │   │   │   ├── [AGENT] Reads the file (Read tool)
-   │   │   │   │   If "docs": locates vars.md via Glob → its parent dir is project root
-   │   │   │   │   → scans {root}/docs/*.md and *.csv
-   │   │   │   ├── [AGENT] Filters requirements relevant to this module
-   │   │   │   └── [AGENT] Refines spec IN MEMORY (does not write yet)
+   │   ├── [AGENT] Phase REQUIREMENTS: attempts Write immediately — does NOT
+   │   │   │   ask anything itself, ever, for this phase (there is no question
+   │   │   │   to ask a human here at all anymore — see below)
    │   │   │
-   │   │   └── USER → "skip" → continues without changes
+   │   │   └── [AGENT] Write attempted → Platform/Dashboard/dashboard-description.md
+   │   │       │
+   │   │       └── [HOOK fires, PreToolUse] pipeline-on-spec-write-gate.sh
+   │   │           ├── File doesn't exist yet (first save), no bootstrap marker
+   │   │           │   yet for this module, and docs/ has readable .md/.csv
+   │   │           │   files → BLOCKS (exit 2) — this check is NOT mode-dependent,
+   │   │           │   it is a pure filesystem check, so it blocks in every mode
+   │   │           │   └── tells the agent: scan docs/ and apply what's relevant,
+   │   │           │       then retry — no question is ever printed to a human
+   │   │           │       │
+   │   │           │       ├── [AGENT] Reads every .md/.csv file in docs/
+   │   │           │       ├── [AGENT] Filters requirements relevant to this
+   │   │           │       │   module, refines spec IN MEMORY
+   │   │           │       └── [AGENT] Retries the Write → now unblocked
+   │   │           │           (a per-module marker file is touched so a
+   │   │           │            second retry, if any, isn't re-blocked)
+   │   │           │
+   │   │           └── Bootstrap marker present (this run), OR docs/ has nothing
+   │   │               readable, OR the file already exists → lets the Write
+   │   │               through immediately — still no question, in any mode
    │   │
-   │   └── [AGENT] Write → Platform/Dashboard/dashboard-description.md
-   │       │    (enriched spec)
-   │       │
-   │       └── [HOOK fires] pipeline-on-spec-created.sh
-   │           └── Detects *-description.md written under Platform/
-   │           └── Writes "SPEC_AUTO_GENERATED" to .pipeline-state
+   │   └── [HOOK fires, PostToolUse] pipeline-on-spec-created.sh
+   │       └── Detects *-description.md written under Platform/
+   │       └── Writes "SPEC_AUTO_GENERATED" to .pipeline-state
    │
-   ├── [AGENT] Asks: "Improvement wizard?"
-   │   │
-   │   └── USER → "no"
-   │       │
-   │       └── [HOOK fires] pipeline-on-user-prompt.sh
-   │           └── Reads .pipeline-state → state = SPEC_AUTO_GENERATED
-   │           └── Detects "no" → updates state to PIPELINE_OFFER_REQUESTED
+   ├── [AGENT] spec-wizard-generate always emits ---SPEC-GENERATED--- and
+   │   │   stops — it never dispatches another agent itself, CALLER present
+   │   │   or not (CALLER is always present now, since the entry-point
+   │   │   redirect above guarantees it). Control returns to qa-coordinator.
    │
-   ├── [AGENT] spec-wizard-pipeline activates
-   │   ├── [SKILL] Reads ${CLAUDE_PLUGIN_ROOT}/skills/spec-wizard:pipeline-offer/SKILL.md
-   │   └── Reads spec, shows summary, asks "Run QA Pipeline?"
-   │
-   └── USER → "yes"
+   └── [AGENT] qa-coordinator (still the same instance from the top of this
+       │   trace) attempts to dispatch test-generation (Stage 1) immediately
+       │   — it does NOT ask "improvement wizard?" itself first
        │
-       ├── [AGENT] qa-coordinator activates
+       ├── [HOOK fires, PreToolUse] pipeline-on-spec-dispatch.sh
+       │   │   (wizard-offer gate — gates qa-coordinator's OWN Stage 1
+       │   │    dispatch, only because this spec was JUST bootstrapped
+       │   │    in this run; a pipeline run against a pre-existing spec
+       │   │    skips this gate entirely)
+       │   ├── Not auto mode, not yet answered → BLOCKS (exit 2)
+       │   │   └── tells qa-coordinator to ask: "Run the improvement
+       │   │       wizard first? yes/no" (there is no separate "run the
+       │   │       pipeline?" question anywhere in this flow — reaching
+       │   │       qa-coordinator already commits to running it)
+       │   │       │
+       │   │       ├── USER → "no"
+       │   │       │   │
+       │   │       │   └── [HOOK fires] pipeline-on-user-prompt.sh
+       │   │       │       └── State = WIZARD_OFFER_PENDING → "no" detected
+       │   │       │       └── Updates state to WIZARD_OFFER_ANSWERED
+       │   │       │       └── Tells qa-coordinator to retry the Stage 1
+       │   │       │           dispatch — now unblocked
+       │   │       │
+       │   │       └── USER → "yes"
+       │   │           │
+       │   │           └── [HOOK fires] pipeline-on-user-prompt.sh
+       │   │               └── State = WIZARD_OFFER_PENDING → "yes" detected
+       │   │               └── Updates state to WIZARD_REQUESTED
+       │   │               └── Tells qa-coordinator to dispatch
+       │   │                   spec-wizard-improve directly (CALLER:
+       │   │                   qa-coordinator) — NOT a retry of the
+       │   │                   blocked dispatch, a different agent
+       │   │                   │
+       │   │                   ├── [AGENT] spec-wizard-improve activates
+       │   │                   │   ├── [SKILL] Reads spec-wizard:improve/SKILL.md
+       │   │                   │   ├── 9 interactive sections, human answers each
+       │   │                   │   ├── [AGENT] Write → overwrites the spec file
+       │   │                   │   │   (write-gate hook bypassed: file exists)
+       │   │                   │   │   └── [HOOK, PostToolUse] pipeline-on-spec-created.sh
+       │   │                   │   │       └── State = WIZARD_REQUESTED →
+       │   │                   │   │           updates to WIZARD_COMPLETE
+       │   │                   │   └── CALLER present → emits
+       │   │                   │       ---WIZARD-COMPLETE--- and stops —
+       │   │                   │       does NOT dispatch spec-wizard-pipeline
+       │   │                   │       (that auto-chain is standalone-only)
+       │   │                   │
+       │   │                   └── qa-coordinator retries the Stage 1
+       │   │                       dispatch — now unblocked (state is
+       │   │                       WIZARD_COMPLETE, not SPEC_AUTO_GENERATED)
        │   │
-       │   ├── [AGENT dispatches] test-generation (sub-agent)
+       │   └── Auto mode → lets the Stage 1 dispatch through immediately,
+       │       no question ever asked
+       │
+       ├── [AGENT dispatches] test-generation (sub-agent)
        │   │   ├── [SKILL] Reads ${CLAUDE_PLUGIN_ROOT}/skills/test-generation:process/SKILL.md
        │   │   ├── [AGENT] Reads spec (never vars.md), generates test cases
        │   │   │   └── Navigation stays symbolic: <<view-id>> / {{BASE_URL}} — BASE_URL
@@ -592,33 +672,45 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │   │
        │   ├── [AGENT attempts dispatch immediately] test-execution (sub-agent)
        │   │   └── [HOOK fires] pipeline-on-execution-dispatch.sh (PreToolUse)
-       │   │       ├── Reads permission_mode from the hook payload
-       │   │       ├── auto mode → exit 0, dispatch proceeds straight through (both gates skipped)
+       │   │       ├── Gate 1 (test data) — checks for an AUTO_TEST_DATA: true
+       │   │       │   marker on the dispatch prompt, NOT permission_mode:
+       │   │       │   │
+       │   │       │   ├── AUTO_TEST_DATA: true present (only when the user's
+       │   │       │   │   INITIAL request explicitly asked for automatic test
+       │   │       │   │   data generation, and test-generation already filled
+       │   │       │   │   test-data.md) → exit 0, Gate 1 satisfied regardless
+       │   │       │   │   of permission_mode
+       │   │       │   │
+       │   │       │   └── marker absent, state = GENERATION_COMPLETE (test data
+       │   │       │       unconfirmed) → exit 2 (BLOCKED) — even in auto mode;
+       │   │       │       state stays GENERATION_COMPLETE
+       │   │       │           │
+       │   │       │           ├── [AGENT] qa-coordinator asks: "Fill test-data.md and confirm when ready"
+       │   │       │           │
+       │   │       │           └── USER → "done"
+       │   │       │               └── [HOOK fires] pipeline-on-user-prompt.sh
+       │   │       │                   └── State = GENERATION_COMPLETE + "done" detected
+       │   │       │                   └── State → TEST_DATA_READY
+       │   │       │                   └── stdout: "Dispatch test-execution agent"
+       │   │       │                       (this text is injected into Claude's context;
+       │   │       │                        agent retries the Agent-tool call)
        │   │       │
-       │   │       ├── not auto mode, state = GENERATION_COMPLETE (test data unconfirmed)
-       │   │       │   → exit 2 (BLOCKED); state stays GENERATION_COMPLETE
-       │   │       │       │
-       │   │       │       ├── [AGENT] qa-coordinator asks: "Fill test-data.md and confirm when ready"
-       │   │       │       │
-       │   │       │       └── USER → "done"
-       │   │       │           └── [HOOK fires] pipeline-on-user-prompt.sh
-       │   │       │               └── State = GENERATION_COMPLETE + "done" detected
-       │   │       │               └── State → TEST_DATA_READY
-       │   │       │               └── stdout: "Dispatch test-execution agent"
-       │   │       │                   (this text is injected into Claude's context;
-       │   │       │                    agent retries the Agent-tool call)
-       │   │       │
-       │   │       └── not auto mode, test data confirmed, no EXECUTION_LEVEL yet
-       │   │           → exit 2 (BLOCKED); State → AWAITING_EXECUTION_LEVEL
-       │   │               │
-       │   │               ├── [AGENT] qa-coordinator asks: "1 Critical / 2 Critical+Mid / 3 All"
-       │   │               │
-       │   │               └── USER → "2"
-       │   │                   └── [HOOK fires] pipeline-on-user-prompt.sh
-       │   │                       └── State = AWAITING_EXECUTION_LEVEL + "2" detected
-       │   │                       └── State → TEST_DATA_READY
-       │   │                       └── stdout: "Retry dispatch with EXECUTION_LEVEL = 2"
-       │   │                           (agent retries the Agent-tool call — hook now allows it through)
+       │   │       └── Gate 2 (execution roughness) — checked once Gate 1 passes.
+       │   │           THIS gate reads permission_mode:
+       │   │           │
+       │   │           ├── EXECUTION_LEVEL already given, or auto mode → exit 0
+       │   │           │
+       │   │           └── not auto mode, no EXECUTION_LEVEL yet
+       │   │               → exit 2 (BLOCKED); State → AWAITING_EXECUTION_LEVEL
+       │   │                   │
+       │   │                   ├── [AGENT] qa-coordinator asks: "1 Critical / 2 Critical+Mid / 3 All"
+       │   │                   │
+       │   │                   └── USER → "2"
+       │   │                       └── [HOOK fires] pipeline-on-user-prompt.sh
+       │   │                           └── State = AWAITING_EXECUTION_LEVEL + "2" detected
+       │   │                           └── State → TEST_DATA_READY
+       │   │                           └── stdout: "Retry dispatch with EXECUTION_LEVEL = 2"
+       │   │                               (agent retries the Agent-tool call — hook now allows it through)
        │   │
        │   └── [AGENT dispatches] test-execution (sub-agent)
        │       ├── [SKILL] Reads ${CLAUDE_PLUGIN_ROOT}/skills/test-execution:process/SKILL.md
@@ -676,31 +768,59 @@ The hooks implement a **state machine** using a `.pipeline-state` file at `.clau
 
 ```mermaid
 stateDiagram-v2
-    [*] --> REQUIREMENTS_ENRICHMENT : spec-wizard-generate generates spec in memory
-    note right of REQUIREMENTS_ENRICHMENT
-        Agent asks user: file path / docs / skip.
-        Happens BEFORE writing to disk.
-        Does NOT create a .pipeline-state entry.
+    [*] --> ENRICHMENT_GATE_ATTEMPTED : spec-wizard-generate attempts the spec Write immediately — it never asks anything itself first
+    note right of ENRICHMENT_GATE_ATTEMPTED
+        pipeline-on-spec-write-gate.sh (PreToolUse:Write). NOT gated on
+        permission_mode at all — a pure filesystem check (does docs/ exist
+        and have readable files?). Not a .pipeline-state entry by itself.
     end note
-    REQUIREMENTS_ENRICHMENT --> SPEC_AUTO_GENERATED : enriched spec written to disk
-    SPEC_AUTO_GENERATED --> WIZARD_REQUESTED : user says "yes" (improve)
-    SPEC_AUTO_GENERATED --> PIPELINE_OFFER_REQUESTED : user says "no" (skip)
-    WIZARD_REQUESTED --> WIZARD_COMPLETE : spec-wizard-improve saves spec
-    WIZARD_COMPLETE --> GENERATION_COMPLETE : test-generation writes test-cases.md
-    PIPELINE_OFFER_REQUESTED --> GENERATION_COMPLETE : test-generation writes test-cases.md
+    ENRICHMENT_GATE_ATTEMPTED --> SPEC_AUTO_GENERATED : file already exists (resave), OR docs/ has nothing readable — Write allowed through, in every mode
+    ENRICHMENT_GATE_ATTEMPTED --> DOCS_SCAN : first save, docs/ has .md/.csv files — Write blocked once (no human involved, ever)
+    DOCS_SCAN --> SPEC_AUTO_GENERATED : agent scans docs/, applies relevant requirements in memory, retries Write — succeeds
+
+    note right of SPEC_AUTO_GENERATED
+        spec-wizard-generate ALWAYS emits ---SPEC-GENERATED--- here and stops.
+        It never dispatches another agent. Control returns to qa-coordinator,
+        which owns everything from here on.
+    end note
+
+    SPEC_AUTO_GENERATED --> WIZARD_GATE_ATTEMPTED : qa-coordinator attempts its OWN Stage 1 (test-generation) dispatch immediately — no question asked itself
+    note right of WIZARD_GATE_ATTEMPTED
+        pipeline-on-spec-dispatch.sh (PreToolUse:Agent), wizard-offer gate —
+        now gates qa-coordinator's dispatch, not spec-wizard-generate's.
+        Only fires when this exact module's state is still
+        SPEC_AUTO_GENERATED (i.e. bootstrapped in THIS run); a pipeline
+        run against a pre-existing spec skips straight past it.
+    end note
+    WIZARD_GATE_ATTEMPTED --> GENERATION_COMPLETE : not freshly bootstrapped, OR already resolved, OR auto mode — dispatch allowed, test-generation writes test-cases.md
+    WIZARD_GATE_ATTEMPTED --> WIZARD_OFFER_PENDING : freshly bootstrapped, not auto mode, not yet answered — dispatch blocked (exit 2), qa-coordinator asks "run improvement wizard first? yes/no"
+    WIZARD_OFFER_PENDING --> WIZARD_REQUESTED : user says "yes" — qa-coordinator dispatches spec-wizard-improve (CALLER: qa-coordinator), NOT a retry of the blocked dispatch
+    WIZARD_OFFER_PENDING --> WIZARD_OFFER_ANSWERED : user says "no" — retry the same Stage 1 dispatch, now unblocked
+    WIZARD_OFFER_ANSWERED --> GENERATION_COMPLETE : retried dispatch succeeds, test-generation writes test-cases.md
+    WIZARD_REQUESTED --> WIZARD_COMPLETE : spec-wizard-improve saves spec (Write gate bypassed — file already exists)
+    WIZARD_COMPLETE --> GENERATION_COMPLETE : spec-wizard-improve reports back to qa-coordinator directly (CALLER present skips spec-wizard-pipeline entirely); qa-coordinator retries Stage 1, test-generation writes test-cases.md
+
+    note right of WIZARD_COMPLETE
+        There is no "run the full QA pipeline?" question anywhere in this
+        default flow. Reaching qa-coordinator at all already commits to
+        running the pipeline through to a report — the ONLY question is
+        whether to pause once for the wizard.
+    end note
+
     GENERATION_COMPLETE --> EXECUTION_DISPATCH_ATTEMPTED : qa-coordinator attempts Agent-tool dispatch immediately
     note right of EXECUTION_DISPATCH_ATTEMPTED
-        pipeline-on-execution-dispatch.sh (PreToolUse) checks permission_mode,
-        then test-data confirmation, then EXECUTION_LEVEL, in that order.
-        Not a .pipeline-state entry — it's the moment the dispatch is attempted,
-        and it can recur many times as each gate is satisfied.
+        pipeline-on-execution-dispatch.sh (PreToolUse) checks Gate 1 (test
+        data — an AUTO_TEST_DATA: true marker, NOT permission_mode), then
+        Gate 2 (EXECUTION_LEVEL, which DOES read permission_mode), in that
+        order. Not a .pipeline-state entry — it's the moment the dispatch
+        is attempted, and it can recur many times as each gate is satisfied.
     end note
-    EXECUTION_DISPATCH_ATTEMPTED --> EXECUTION_COMPLETE : auto mode — both gates skipped, dispatch allowed, test-execution writes test-report
-    EXECUTION_DISPATCH_ATTEMPTED --> GENERATION_COMPLETE : not auto mode, test data not yet confirmed — dispatch blocked (exit 2), state unchanged
+    EXECUTION_DISPATCH_ATTEMPTED --> GATE2_CHECK : AUTO_TEST_DATA: true present on the dispatch (explicit upfront request) — Gate 1 satisfied regardless of permission_mode
+    EXECUTION_DISPATCH_ATTEMPTED --> GENERATION_COMPLETE : no AUTO_TEST_DATA marker, test data not yet confirmed — dispatch blocked (exit 2), state unchanged — even in auto mode
     GENERATION_COMPLETE --> TEST_DATA_READY : user says "done" / "ready"
     TEST_DATA_READY --> EXECUTION_DISPATCH_ATTEMPTED : qa-coordinator retries the dispatch
-    EXECUTION_DISPATCH_ATTEMPTED --> EXECUTION_COMPLETE : not auto mode, test data confirmed, EXECUTION_LEVEL already known — dispatch allowed
-    EXECUTION_DISPATCH_ATTEMPTED --> AWAITING_EXECUTION_LEVEL : not auto mode, test data confirmed, no level yet — dispatch blocked (exit 2)
+    GATE2_CHECK --> EXECUTION_COMPLETE : EXECUTION_LEVEL already known, or auto mode — dispatch allowed, test-execution writes test-report
+    GATE2_CHECK --> AWAITING_EXECUTION_LEVEL : not auto mode, no level yet — dispatch blocked (exit 2)
     AWAITING_EXECUTION_LEVEL --> TEST_DATA_READY : user answers 1 / 2 / 3 — retry dispatch with EXECUTION_LEVEL set
     EXECUTION_COMPLETE --> [*]
 ```
@@ -711,6 +831,7 @@ stateDiagram-v2
 2. **Hooks UPDATE** — when they detect a relevant event, they write the new state
 3. **Hooks INJECT** — in certain states, they write to stdout, which Claude Code injects into the agent's context as additional instructions
 4. **Agents don't know about hooks** — agents follow their skills; hooks coordinate transitions invisibly between them
+5. **Agents never decide to ask-and-wait on their own** — at every hand-off, the dispatching agent always *attempts* the next Write/dispatch immediately; only a hook (which alone can see `permission_mode`) decides whether that attempt is allowed through silently or blocked so a human gets asked first. This is what makes "skip this question in auto mode" a mechanical guarantee instead of something the model has to correctly infer from its own prompt.
 
 **Why use hooks instead of having the agent remember:**
 
@@ -718,6 +839,7 @@ stateDiagram-v2
 - **Decoupling**: each agent is independent and doesn't need to know the full pipeline
 - **Persistence**: state survives across sessions (it's a file on disk)
 - **Simplicity**: each agent only knows its own task
+- **No reliance on inference**: the agent never has to guess whether it's allowed to skip a question — it always tries, and the hook's block/pass-through answers that for it
 
 ---
 

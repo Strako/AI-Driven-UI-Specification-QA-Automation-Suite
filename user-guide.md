@@ -77,20 +77,30 @@ Generate a token from: Figma → Settings → Personal access tokens.
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              FULL PIPELINE                                  │
 │                                                                             │
-│  Step 1          Step 1.5        Step 2          Step 3        Step 4       │
+│  Step 0          Step 1          Step 1.5       Step 2          Step 3      │
 │                                                                             │
-│  spec-wizard  → requirements  → spec-wizard  → qa-coord   → test-exec      │
-│  -generate      enrichment      -improve       (automated)   (automated)   │
-│  (automated)    (you + AI)      (you + AI)         │              │         │
-│       │              │               │              │              │         │
-│  spec in       refined spec    saved spec      test-cases    test-report    │
-│  memory        in memory       on disk         test-data     screenshots    │
-│                [optional]      [YOU FILL       [YOU FILL                    │
-│                                  this]          this]                       │
+│  qa-coord     → spec-wizard  → docs/       → spec-wizard  → qa-coord       │
+│  (entry point)  -generate      enrichment    -improve       + test-exec    │
+│  (automated)    (automated)    (automatic,   (you + AI,     (automated)    │
+│       │              │          silent)       optional)         │         │
+│  bootstraps    spec in        refined spec   saved spec    test-cases      │
+│  the spec      memory         in memory      on disk,      test-data      │
+│  request                      [only if       reports        test-report   │
+│                                docs/ exists]  straight       screenshots   │
+│                                               back to        [YOU FILL     │
+│                                               qa-coord]       test-data]   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> The pause at the end of Step 3 (fill in `test-data.md`) and the optional **Step 4.5 — Execution Roughness Gate** between Step 4 and Step 5 are both enforced by the same `PreToolUse` hook, not just an instruction the coordinator might skip. Both are skipped automatically when you're in Claude Code's **auto** permission mode — the pipeline runs straight through to execution using whatever is already in `test-data.md`, defaulting to running all tests. The roughness question is also skipped (in either mode) if you already stated a level upfront.
+> `qa-coordinator` is always the entry point — even for a bare "create a spec for X" with no mention of testing. A `PreToolUse` hook (`pipeline-on-spec-dispatch.sh`) enforces this: any direct dispatch of `spec-wizard-generate` is blocked and redirected to `qa-coordinator`, which then bootstraps the spec itself (Step 0). **There is no "just create the spec and stop" outcome once you reach `qa-coordinator` this way** — the only question anywhere in this flow is whether to pause once for the improvement wizard (end of Step 1); the pipeline always runs through to a delivered report afterward. The only way to get a narrower result (just a spec, or a spec review with a real yes/no on whether to run the pipeline) is to explicitly invoke an individual agent by name instead — see **Running the Pipeline Manually** below.
+>
+> Every question in this pipeline — the improvement-wizard offer (end of Step 1), the pause to fill `test-data.md`, and the **Execution Roughness Gate** — is enforced by a `PreToolUse` hook, not just an instruction the agent might skip or forget. These hooks do **not** all treat Claude Code's **auto** permission mode the same way:
+>
+> - The **docs/ enrichment step (Step 1.5)** never asks a question at all, in any mode — it's a pure filesystem check (does `docs/` exist and have readable files?), not a permission-mode decision.
+> - The **improvement-wizard offer** and **execution roughness gate** are both skipped automatically in auto mode, each defaulting to the "keep going" answer (skip the wizard, run all tests).
+> - The **test-data-fill pause** is the one exception: it is **never** skipped by auto mode alone. It only skips if your initial request explicitly asked for automatic test data generation (see **Step 3.5**) — auto mode by itself always still pauses here, because running tests against unconfirmed data is exactly what this gate exists to prevent.
+>
+> In practice this means a single **"create a spec for X"** request in auto mode runs unattended through spec creation, enrichment, the wizard offer, and test generation — but still pauses for you to fill `test-data.md` unless you also explicitly asked for automatic test data. Add that to the same request for a fully unattended run end-to-end. The roughness question is also skipped (in either mode) if you already stated a level upfront.
 
 ---
 
@@ -100,7 +110,7 @@ The auto-generator navigates to your live page using Playwright MCP, analyzes th
 
 ### Invoke the agent
 
-In Claude Code, switch to the `spec-wizard-generate` agent and describe what you need. You can front-load all inputs in one message:
+In Claude Code, describe what you need — you don't need to name any agent explicitly; `qa-coordinator` is the entry point for this request and bootstraps the spec itself via `spec-wizard-generate` (Step 0). A direct dispatch of `spec-wizard-generate` is redirected to `qa-coordinator` automatically if you (or the model) try it anyway. You can front-load all inputs in one message:
 
 ```
 Create a spec for /dashboard.
@@ -165,7 +175,7 @@ After you confirm the inputs, the agent:
 5. **Scrolls** through the page and interacts with tabs/expandable sections
 6. **Analyzes** the DOM to identify components, fields, actions, and states
 7. **Generates** the complete spec in memory following `TEMPLATE.md` format
-8. **Asks about requirements enrichment** (see Step 1.5 below)
+8. **Attempts to save** — a hook silently checks for a `docs/` folder and applies it if present (see Step 1.5 below); no question is ever asked here
 9. **Saves** the enriched spec to `Platform/{ModuleName}/{module}-description.md`
 
 Then prints:
@@ -174,80 +184,25 @@ Then prints:
 ✅  Spec saved: Platform/Dashboard/dashboard-description.md
 ```
 
-And asks:
+Control now returns to `qa-coordinator` — `spec-wizard-generate` itself never asks anything else and never dispatches another agent. `qa-coordinator` immediately attempts to move into test generation, and it's *that* attempt which is gated on the improvement-wizard question:
 
 ```
 The spec for dashboard has been generated.
-Would you like to run the improvement wizard to review and refine each section interactively?
-- yes → opens the spec improvement wizard
-- no → goes straight to the QA pipeline offer
+Would you like to run the improvement wizard to review and refine each section interactively before continuing into the QA pipeline?
+- yes → opens the spec improvement wizard, then continues into the pipeline
+- no → continues straight into the QA pipeline
 ```
+
+> **If your Claude Code session is in auto permission mode**, a `PreToolUse` hook (`pipeline-on-spec-dispatch.sh`) skips this question automatically — `qa-coordinator` never asks anything itself first, it just attempts to move straight into test generation, as if you'd already answered "no." You will not see this prompt at all in auto mode. **There is no separate "run the QA pipeline?" question anywhere in this flow** — reaching `qa-coordinator` at all already means the full pipeline runs through to a report; the only thing this question decides is whether to pause once for the wizard first.
 
 ---
 
-## Step 1.5 — Requirements Enrichment (Optional)
+## Step 1.5 — Automatic docs/ Enrichment
 
-Before writing the spec to disk, the agent offers to enrich the generated spec with project requirements or user stories. This step refines the spec in memory using your existing documentation, so the saved file already incorporates known business requirements.
+Before writing the spec to disk for the first time, a `PreToolUse` hook (`pipeline-on-spec-write-gate.sh`) checks whether a `docs/` folder exists at your project root with at least one readable requirements file. **This is not a question asked of you** — nothing is ever printed and nothing waits for a reply, in any mode. It's a deterministic filesystem check, not a permission-mode decision.
 
-### The prompt you will see
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋  REQUIREMENTS ENRICHMENT (optional)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The spec has been generated from the live page.
-Before saving, would you like to enrich it with project requirements?
-
-  • Provide a file path  —  path to an .xlsx, .csv, or .md file containing
-    user stories or requirements for the platform
-
-  • Type  docs  —  auto-scan the docs/ folder at the project root
-
-  • Type  skip  —  save the spec as-is without requirements enrichment
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-### Option A — Provide a file path
-
-Type the path to your requirements file:
-
-```
-/path/to/requirements.md
-```
-
-Accepted formats:
-
-| Format | How it is read |
-|---|---|
-| `.md` | Read directly — user stories, acceptance criteria, feature descriptions |
-| `.csv` | Read directly — each row treated as a requirement |
-| `.xlsx` | Binary format — agent will ask you to re-export as `.csv` or `.md` first |
-
-The agent reads the file, identifies requirements **relevant to this specific view** (matched by module name, route, component names, or feature keywords), and applies them to the in-memory spec:
-
-- Adds missing fields mentioned in requirements
-- Adds business rules derived from acceptance criteria
-- Adds screen states and actions described in user stories
-- Expands the Detailed Flow Description with requirement-driven scenarios
-
-After enrichment, the agent prints a summary:
-
-```
-✅  Requirements enrichment applied
-
-  Source          : /path/to/requirements.md
-  Relevant items  : 7 requirements matched to dashboard
-  Changes applied :
-    • Added field ${dashboard-active-jobs-count} to Stats Panel component
-    • Added business rule: Only admin users may access this view
-    • Added screen state: empty (no active jobs)
-```
-
-### Option B — Type `docs`
-
-If you have requirement files in a `docs/` folder at your project root, type `docs`. The agent scans all `.md` and `.csv` files in that folder, extracts requirements relevant to this view, and applies the same enrichment.
-
-> The agent locates "project root" by finding `vars.md` via a Glob search — so your `docs/` folder just needs to sit next to `vars.md`. If `docs/` does not exist or is empty, the agent prints `⚠️  No files found in docs/. Saving spec as generated.` and continues without failing.
+- **If `docs/` doesn't exist, or has nothing readable in it** — the spec saves immediately. Nothing to see here.
+- **If `docs/` has `.md` or `.csv` files** — the save is blocked exactly once so the agent can read them, apply anything relevant, and retry:
 
 ```
 docs/
@@ -256,9 +211,29 @@ docs/
 └── acceptance-criteria.csv  ← scanned automatically
 ```
 
-### Option C — Type `skip`
+> The agent locates "project root" by finding `vars.md` via a Glob search — so your `docs/` folder just needs to sit next to `vars.md`. `.xlsx` files are skipped as unreadable (re-export as `.md` or `.csv` if you want a spreadsheet's content applied).
 
-Saves the spec exactly as generated from the DOM analysis. You can still refine it manually in Step 2 (the improvement wizard).
+The agent identifies requirements **relevant to this specific view** (matched by module name, route, component names, or feature keywords) and applies them to the in-memory spec before retrying the save:
+
+- Adds missing fields mentioned in requirements
+- Adds business rules derived from acceptance criteria
+- Adds screen states and actions described in user stories
+- Expands the Detailed Flow Description with requirement-driven scenarios
+
+After enrichment, the agent prints a summary and retries the save:
+
+```
+✅  Requirements enrichment applied from docs/
+
+  Files scanned   : requirements.md, acceptance-criteria.csv
+  Relevant items  : 7 requirements matched to dashboard
+  Changes applied :
+    • Added field ${dashboard-active-jobs-count} to Stats Panel component
+    • Added business rule: Only admin users may access this view
+    • Added screen state: empty (no active jobs)
+```
+
+If you don't keep a `docs/` folder, or this particular run has nothing relevant to add, you can still refine the spec manually in Step 2 (the improvement wizard) or by editing the file directly — there's no other way to feed in requirements for a direct spec-creation request.
 
 ---
 
@@ -322,35 +297,15 @@ For each section, the wizard:
 
 ### Final review and save
 
-After all 9 sections, the wizard shows the complete updated spec and asks for confirmation. Once saved, it automatically launches `spec-wizard-pipeline`.
+After all 9 sections, the wizard shows the complete updated spec and asks for confirmation. Once saved, it reports back to `qa-coordinator` directly — there's no further question, `qa-coordinator` immediately continues into test generation (Step 3 below).
+
+> This step is reached two different ways, and they behave slightly differently after saving: coming from **Step 1** (the default flow, `qa-coordinator` dispatched the wizard for you), the wizard reports straight back to `qa-coordinator` and the full pipeline continues unconditionally. If you instead invoked `spec-wizard-improve` **standalone**, by name, on an already-existing spec (not through Step 1 at all), it keeps its original behavior: it launches `spec-wizard-pipeline`, which shows a spec summary and asks a real "run the QA pipeline? yes/no" question — since that's a deliberate, individual tool invocation rather than the default entry point.
 
 ---
 
-## Step 3 — Pipeline Offer and Test Generation
+## Step 3 — Test Generation
 
-Whether you came from the improvement wizard or skipped it, `spec-wizard-pipeline` shows a structured summary:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋  SPEC SUMMARY — Dashboard
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-File       : Platform/Dashboard/dashboard-description.md
-View ID    : <<dashboard-3f2c1a9b-...>>
-Route      : /dashboard  →  https://your-app.example.com/dashboard
-
-  Components     : 3
-  Fields (total) : 12
-  Screen States  : 4
-  Business Rules : 2
-  Actions        : 6
-  Related Views  : 1 spec files, 0 external services
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🚀  Run the Full QA Pipeline?
-Reply yes to start, or no to stop here.
-```
-
-If you reply **yes**, the `qa-coordinator` is dispatched and test generation begins.
+Whether you came from the improvement wizard or skipped it, `qa-coordinator` attempts to dispatch `test-generation` immediately — there's no summary shown and no "run the pipeline?" question here; reaching `qa-coordinator` at all already means the full pipeline runs through to a report.
 
 ### What `test-generation` produces
 
@@ -364,7 +319,7 @@ Coverage generated: **Happy Path · Smoke · Functional · Edge Cases · Explora
 
 Every test case is also assigned a **Severity** — Critical, Mid, or Low — judged by business impact (the happy path and smoke checks are typically Critical; edge cases and exploratory scenarios are typically Low). This severity is what Step 4.5 uses to scope how much of the suite actually runs.
 
-**`test-data.md`** — empty template organized by scenario
+**`test-data.md`** — organized by scenario, empty by default:
 
 ```markdown
 # Test Data — <<dashboard-3f2c1a9b-...>>
@@ -377,6 +332,8 @@ Every test case is also assigned a **Severity** — Critical, Mid, or Low — ju
 - ${jobs-status-filter}:
 ```
 
+Unless you explicitly asked for automatic test data generation in your initial request (see **Step 3.5** below), every field stays blank like this for you to fill in manually.
+
 After both files are written, the coordinator reports Stage 1 completion and immediately attempts to dispatch test execution:
 
 ```
@@ -384,10 +341,10 @@ After both files are written, the coordinator reports Stage 1 completion and imm
 
   test-cases.md  → 24 cases (Smoke: 3, HP: 2, Functional: 9, Edge: 6, Exploratory: 4)
                    Severity: 6 Critical, 15 Mid, 3 Low
-  test-data.md   → 14 scenarios
+  test-data     → 14 scenarios
 ```
 
-Unless your session is in Claude Code's **auto** permission mode, a `PreToolUse` hook blocks that dispatch attempt until you confirm the test data is filled in, and the coordinator pauses:
+A `PreToolUse` hook blocks that dispatch attempt until you confirm the test data is filled in, and the coordinator pauses:
 
 ```
 Before execution, fill in the test data:
@@ -396,11 +353,31 @@ Before execution, fill in the test data:
 Reply here when you are ready to continue.
 ```
 
-In **auto** mode, this pause is skipped entirely — the pipeline goes straight into Step 5 (Test Execution) using whatever is already in `test-data.md`.
+**This pause happens regardless of Claude Code's permission mode** — unlike every other pause in this pipeline, auto mode does **not** skip it. The only way to skip it is Step 3.5 below.
+
+---
+
+## Step 3.5 — Automatic Test Data Generation (optional)
+
+If you'd rather not fill `test-data.md` by hand — for a fully unattended run, or just to save time — say so in your **initial** request, e.g.:
+
+```
+Create a spec for /dashboard and run the full QA pipeline, generate the test data automatically.
+```
+
+`qa-coordinator` parses this at Startup and passes `AUTO_FILL_TEST_DATA: true` to `test-generation`, which fills every field itself instead of leaving it blank:
+
+- **Credential-like fields** tied to a named `vars.md` variable (e.g. a login field referencing `{{AUTH_EMAIL}}`) get the real value from `vars.md` if one is already set; otherwise they're left blank rather than inventing a credential that won't match your app.
+- **Signup/registration fields** are always left blank regardless — `test-execution` generates and confirms a fresh Yopmail identity for those itself, and this must stay the single source of truth for that account.
+- **Every other field** gets a plausible, obviously-a-test-value based on its name, type, and any validation rules in the spec (e.g. a well-formed email, a number inside a stated range, one of a dropdown's documented options).
+
+With `test-data.md` already filled, `qa-coordinator` includes `AUTO_TEST_DATA: true` on the test-execution dispatch, and the Step 4 pause below is skipped entirely — you go straight to Step 4.5 / Step 5. Always skim the auto-filled `test-data.md` before a real run if the values matter to you; nothing stops you from editing it further before test execution actually starts (the file is already fully written by this point, and the pause is only skipped, not the file's existence — you could interrupt after Stage 1 and edit it if truly needed).
 
 ---
 
 ## Step 4 — Fill `test-data.md`
+
+> Skip this step if you used **Step 3.5** — `test-data.md` is already filled and the pause never happened.
 
 Open `Platform/Dashboard/test-data.md` and replace every empty `${field-name}:` slot with a real value.
 
@@ -442,7 +419,7 @@ The pipeline hook detects your confirmation and automatically attempts to dispat
 
 ## Step 4.5 — Execution Roughness Gate (conditional)
 
-Before test-execution actually starts, the same hook that gated the test-data confirmation in Step 3 checks — as its second gate — whether your Claude Code session is running in **auto** permission mode.
+Before test-execution actually starts, the same hook that gated the test-data confirmation in Step 3/3.5 checks a second, independent gate — this one **is** affected by whether your Claude Code session is running in **auto** permission mode (unlike the test-data gate before it).
 
 - **If you already stated a level** when you started the pipeline (e.g. "...just run the critical tests"), this step is skipped entirely — your choice is used, whether or not auto mode is on.
 - **If you're in auto mode** and said nothing, this step is also skipped — the pipeline defaults to running **all** test cases.
@@ -528,9 +505,11 @@ You don't have to go through the full flow every time. Here's how to invoke each
 ### Create a spec (auto-generate only)
 
 ```
-Invoke: spec-wizard-generate
+Invoke: qa-coordinator
 "Create a spec for /jobs, module name vacantes"
 ```
+
+> `qa-coordinator` is always the entry point here — a direct dispatch of `spec-wizard-generate` gets redirected to it automatically.
 
 ### Improve an existing spec
 
@@ -573,20 +552,20 @@ Invoke: qa-coordinator
 
 | You want to… | Agent | Message / Action |
 |---|---|---|
-| Auto-generate a spec from a live page | `spec-wizard-generate` | `"Create a spec for /dashboard, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD"` |
-| Auto-generate a spec behind a brand-new account | `spec-wizard-generate` | `"Create a spec for /account/settings, new account at /signup with email: AUTH_EMAIL, password: AUTH_PASSWORD, destination /account/settings"` |
-| Auto-generate with design comparison | `spec-wizard-generate` | `"Create a spec for /dashboard, design reference: https://figma.com/design/...?node-id=..."` |
-| Auto-generate with Pencil design | `spec-wizard-generate` | `"Create a spec for /login, design reference: Login Screen"` |
-| Enrich spec with requirements from a file | `spec-wizard-generate` | At the enrichment prompt, type a file path (e.g. `/docs/requirements.md`) |
-| Enrich spec with requirements from docs/ folder | `spec-wizard-generate` | At the enrichment prompt, type `docs` |
-| Skip requirements enrichment | `spec-wizard-generate` | At the enrichment prompt, type `skip` |
+| Auto-generate a spec from a live page | `qa-coordinator` | `"Create a spec for /dashboard, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD"` |
+| Auto-generate a spec behind a brand-new account | `qa-coordinator` | `"Create a spec for /account/settings, new account at /signup with email: AUTH_EMAIL, password: AUTH_PASSWORD, destination /account/settings"` |
+| Auto-generate with design comparison | `qa-coordinator` | `"Create a spec for /dashboard, design reference: https://figma.com/design/...?node-id=..."` |
+| Auto-generate with Pencil design | `qa-coordinator` | `"Create a spec for /login, design reference: Login Screen"` |
+| Enrich spec with requirements automatically | (automatic) | Place `.md`/`.csv` files in a `docs/` folder at the project root — applied silently, no action needed |
 | Improve an existing spec interactively | `spec-wizard-improve` | `"Improve Platform/Dashboard/dashboard-description.md"` |
 | See spec summary + offer pipeline | `spec-wizard-pipeline` | `"Summarize Platform/Dashboard/dashboard-description.md"` |
 | Full pipeline on an existing spec | `qa-coordinator` | `"Run the full QA pipeline for Platform/Dashboard/dashboard-description.md"` |
 | Generate test cases only | `qa-coordinator` | `"Generate test cases only for Platform/Dashboard/dashboard-description.md"` |
+| Generate test cases with test data auto-filled | `qa-coordinator` | `"Generate test cases for Platform/Dashboard/dashboard-description.md, generate the test data automatically"` |
 | Execute already-filled tests | `qa-coordinator` | `"Execute tests for Platform/Dashboard/dashboard-description.md"` |
 | Execute only the critical tests | `qa-coordinator` | `"Execute tests for Platform/Dashboard/dashboard-description.md, just the critical tests"` |
-| Create spec without login | `spec-wizard-generate` | `"Create a spec for /jobs, module name vacantes"` |
+| Run the full pipeline fully unattended | `qa-coordinator` | `"Create a spec for /jobs and run the full QA pipeline, generate the test data automatically"` (in auto permission mode) |
+| Create spec without login | `qa-coordinator` | `"Create a spec for /jobs, module name vacantes"` |
 
 ---
 
@@ -598,7 +577,7 @@ Invoke: qa-coordinator
 
 - **Screenshot evidence lives in `evidences/`** — every `TC-*.png` from test execution is saved inside `Platform/{ModuleName}/evidences/`, never directly in the module folder. This subfolder is created automatically by a pipeline hook the moment `test-cases.md` is generated, so it's already there by the time execution starts. (The `{module}-analysis.png` from spec auto-generation is unrelated and stays in the module root.)
 
-- **Requirements enrichment** — place your project requirements or user stories as `.md` or `.csv` files in a `docs/` folder at your project root. When the agent asks about requirements enrichment, type `docs` to apply them automatically. The agent matches requirements to the specific view being analyzed — it only applies relevant items and ignores content for other modules.
+- **Requirements enrichment** — place your project requirements or user stories as `.md` or `.csv` files in a `docs/` folder at your project root. There's nothing to type or confirm — a `PreToolUse` hook checks for `docs/` before every first-time spec save and applies anything relevant automatically, silently, in every mode. The agent matches requirements to the specific view being analyzed — it only applies relevant items and ignores content for other modules.
 
 - **Design comparison** — provide a Figma frame URL or Pencil slide name when creating a spec to enable automatic design-vs-implementation comparison. The system retrieves the design using the appropriate MCP tool and compares it against the live page during test execution. Discrepancies are classified by severity and documented in the report.
 
@@ -614,7 +593,7 @@ Invoke: qa-coordinator
 
 - **Execution timestamps** — the `test-execution` agent has no `Bash`/`date` access, so it reads the clock via a Playwright `browser_evaluate` call. Every report includes an `EXECUTION_STARTED` / `EXECUTION_COMPLETED` execution window, and every screenshot filename carries its own capture timestamp.
 
-- **Test data confirmation gate** — if your Claude Code session isn't in **auto** permission mode, a `PreToolUse` hook blocks test-execution from starting until you've explicitly confirmed `test-data.md` is filled in (see Step 3/4). In **auto** mode, this is skipped automatically and test-execution runs against whatever `test-data.md` currently contains — so double-check it's filled in before starting a pipeline run in auto mode.
+- **Test data confirmation gate** — a `PreToolUse` hook blocks test-execution from starting until you've explicitly confirmed `test-data.md` is filled in (see Step 3/4). Unlike every other gate in this pipeline, Claude Code's **auto** permission mode does **not** skip this one — it only skips if you explicitly asked for automatic test data generation in your initial request (Step 3.5). Running an unattended session in auto mode without that request still pauses here.
 
 - **Execution roughness gate** — if your Claude Code session isn't in **auto** permission mode, the pipeline asks how thorough a run should be (Critical only / Critical + Mid / All) before test-execution starts, using each test case's `Severity`. State the level upfront in your request (e.g. "just the critical tests") to skip the question — this works the same whether or not auto mode is on. In auto mode with no level stated, it defaults to running everything. Anything excluded shows up in the report as `⏭ SKIPPED`, never silently dropped.
 

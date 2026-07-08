@@ -228,66 +228,30 @@ Copy the full **LLM Instructions — Test Case Generation** section verbatim fro
 
 ## Phase REQUIREMENTS — Enrich Spec with Project Requirements
 
-Before saving the spec to disk, offer the user an opportunity to enrich the generated spec with project requirements or user stories. This step refines the **in-memory spec draft** before writing.
+Before saving the spec to disk, this phase enriches the generated spec with project requirements — from `REQUIREMENTS_NOTE` when supplied, and always, automatically, from the project's `docs/` folder if it exists. This is **not a question asked of a human** — nothing in this phase ever prints a prompt or waits for a reply. Both sources refine the **in-memory spec draft** before writing, and both can apply to the same run.
 
-**If `REQUIREMENTS_NOTE` is present in your input** (supplied by a caller such as qa-coordinator, not typed by a human at this prompt): skip the interactive prompt below entirely. Treat every sentence in `REQUIREMENTS_NOTE` as a requirement relevant to this view and apply it directly to the in-memory draft using the same rules as the "user provides a file path" case further down (Components/Fields, Business Rules, Screen States, Actions and Transitions, Detailed Flow Description) — including the **Multi-role / embedded credential variables** handling below wherever the note names more than one credential variable. Print the `✅ Requirements enrichment applied` summary (source: `REQUIREMENTS_NOTE`), then proceed to **Write the Spec File**.
+### Step 1 — Apply `REQUIREMENTS_NOTE`, if present
 
-Otherwise, print:
+**If `REQUIREMENTS_NOTE` is present in your input** (supplied by a caller such as qa-coordinator): treat every sentence in it as a requirement relevant to this view and apply it directly to the in-memory draft using the same rules as **Step 2** below (Components/Fields, Business Rules, Screen States, Actions and Transitions, Detailed Flow Description) — including **Multi-role / embedded credential variables** wherever the note names more than one credential variable. Print the `✅ Requirements enrichment applied` summary (source: `REQUIREMENTS_NOTE`).
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋  REQUIREMENTS ENRICHMENT (optional)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The spec has been generated from the live page.
-Before saving, would you like to enrich it with project requirements?
+If `REQUIREMENTS_NOTE` is absent, skip this step silently — do not print anything about it.
 
-  • Provide a file path  —  path to an .xlsx, .csv, or .md file containing
-    user stories or requirements for the platform
-    (e.g. /path/to/requirements.md)
+### Step 2 — Attempt to write the spec (docs/ folder gate)
 
-  • Type  docs  —  auto-scan the docs/ folder at the project root
+Regardless of whether Step 1 applied anything, proceed immediately to **Write the Spec File** below. A `PreToolUse` hook (`pipeline-on-spec-write-gate.sh`) checks — deterministically, on every first-time save — whether a `docs/` folder exists at the project root with at least one `.md` or `.csv` file in it:
 
-  • Type  skip  —  save the spec as-is without requirements enrichment
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-**Wait for the user's response before proceeding.**
-
-### If the user provides a file path:
-
-1. Determine the file extension:
-   - **.md or .csv**: Use `Read` to load the file contents. If the file exceeds 500 lines, read the first 500 lines as a representative sample and note the truncation.
-   - **.xlsx**: Binary Excel files cannot be read directly. Inform the user and ask them to re-export as `.csv` or `.md` and provide the new path, or type `skip` to continue without enrichment.
-2. From the file contents, identify every requirement, user story, or acceptance criterion **relevant to this specific view** — matched by any of: module name, route path, detected component names, or related feature keywords inferred from the DOM analysis.
-3. Discard requirements clearly aimed at unrelated modules or unrelated functionality.
-4. Apply the relevant requirements to the **in-memory spec draft** — do not write the file yet:
-   - **Components / Fields**: Add or correct fields described in requirements (e.g., "The dashboard must show total active jobs" → ensure a stats component contains this field).
-   - **Business Rules**: Add rules derived from acceptance criteria (e.g., "Only admin users may access this page" → add a business rule with a generated `<<rule-uuid>>`).
-   - **Screen States**: Add named states explicitly mentioned in requirements.
-   - **Actions and Transitions**: Add or correct transitions described in user stories.
-   - **Detailed Flow Description**: Expand the narrative with requirement-driven scenarios.
-5. Print a summary before proceeding to Write:
-
-```
-✅  Requirements enrichment applied
-
-  Source          : {file path}
-  Relevant items  : {N} requirements matched to {module-name}
-  Changes applied :
-    • {list each addition or correction, one per bullet}
-```
-
-### If the user types `docs`:
-
-1. Use `Bash` to list the contents of `docs/` at the project root:
-   `ls "{project-root}/docs/" 2>/dev/null || echo "(empty)"`
-2. If the folder is empty or does not exist:
-   Print: `⚠️  No files found in docs/. Saving spec as generated.`
-   Proceed immediately to Write phase.
-3. If files are found:
-   - Use `Read` to load every `.md` and `.csv` file found in `docs/`. Skip `.xlsx` and other binary files and note them as unreadable.
-   - Apply the same relevance filtering and in-memory spec refinement described in the file-path case above.
-4. Print a summary:
+- **If the Write goes through** — there is no `docs/` folder, or it has nothing readable in it, or this module's spec file already exists on disk (a resave, not a first-time save) — there is nothing to apply. Continue straight to whatever the Write's own completion step says. Do not print anything about requirements enrichment in this case.
+- **If the Write is blocked** — `docs/` exists and has `.md`/`.csv` files. The hook's feedback names the exact directory. Do the following, then retry the Write — do not ask the user anything, do not wait for a reply:
+  1. Use `Read` to load every `.md` and `.csv` file in that `docs/` directory. Skip `.xlsx` and other binary files and note them as unreadable.
+  2. From the file contents, identify every requirement, user story, or acceptance criterion **relevant to this specific view** — matched by any of: module name, route path, detected component names, or related feature keywords inferred from the DOM analysis. Discard requirements clearly aimed at unrelated modules or functionality.
+  3. Apply the relevant requirements to the **in-memory spec draft** — do not write the file yet:
+     - **Components / Fields**: Add or correct fields described in requirements (e.g., "The dashboard must show total active jobs" → ensure a stats component contains this field).
+     - **Business Rules**: Add rules derived from acceptance criteria (e.g., "Only admin users may access this page" → add a business rule with a generated `<<rule-uuid>>`).
+     - **Screen States**: Add named states explicitly mentioned in requirements.
+     - **Actions and Transitions**: Add or correct transitions described in user stories.
+     - **Detailed Flow Description**: Expand the narrative with requirement-driven scenarios.
+     - Apply **Multi-role / embedded credential variables** below wherever `docs/` names more than one credential variable for the same component.
+  4. Print a summary, then retry the Write — it is now unblocked:
 
 ```
 ✅  Requirements enrichment applied from docs/
@@ -300,7 +264,7 @@ Before saving, would you like to enrich it with project requirements?
 
 ### Multi-role / embedded credential variables
 
-This applies whenever the page's *content* — not the page-gating Auth question in Phase 0, but a component inside the page such as an embedded login form usable by more than one role — needs more than one named credential variable pair (e.g. a role-selectable login usable by `CLIENT_EMAIL`/`CLIENT_PASSWORD` for one role and `PROVIDER_EMAIL`/`PROVIDER_PASSWORD` for another). This can come from `REQUIREMENTS_NOTE`, a requirements file, `docs/`, or direct DOM analysis of the component itself. Whenever it applies:
+This applies whenever the page's *content* — not the page-gating Auth question in Phase 0, but a component inside the page such as an embedded login form usable by more than one role — needs more than one named credential variable pair (e.g. a role-selectable login usable by `CLIENT_EMAIL`/`CLIENT_PASSWORD` for one role and `PROVIDER_EMAIL`/`PROVIDER_PASSWORD` for another). This can come from `REQUIREMENTS_NOTE`, `docs/`, or direct DOM analysis of the component itself. Whenever it applies:
 
 1. Pair every email variable with the password variable the source explicitly assigns to the *same* role — never by position, order of appearance, or guesswork. If a pairing is ambiguous or contradicted mid-message (e.g. the source corrects itself), use the final, explicitly corrected pairing.
 2. Add (or extend) a Business Rule in the spec — `<<multi-role-login-{hex}>>` — describing the roles, which variable pair authenticates which role, and any stated constraint (e.g. "plain email/password only, no social login"). Reference each credential using `{{VARIABLE_NAME}}` tokens per TEMPLATE.md's Environment Variable Placeholder Format — never a literal value.
@@ -312,14 +276,6 @@ This applies whenever the page's *content* — not the page-gating Auth question
    ```
    Never invent or write a real credential value here — only placeholder text, exactly like the seed `AUTH_EMAIL` / `AUTH_PASSWORD` lines.
 5. Mention every newly added placeholder variable in the enrichment/save summary so the user knows to fill them in with real test credentials before test execution.
-
-### If the user types `skip` (or any variant: "no", "none", "not now"):
-
-Print:
-```
-Skipping requirements enrichment. Saving spec as generated.
-```
-Proceed immediately to Write phase.
 
 ---
 
@@ -336,11 +292,9 @@ Print:
 
 ---
 
-## Next Steps — Always Required After Saving
+## Completion — Return Control to CALLER
 
-After the spec file is written:
-
-**If `CALLER` is present in your input**, skip Steps 1–2 below entirely — do not ask about the wizard, and do not dispatch `spec-wizard-improve` or `spec-wizard-pipeline`. Instead output:
+After the spec file is written, always output:
 
 ```
 ---SPEC-GENERATED---
@@ -351,44 +305,4 @@ MODULE: {module-name}
 
 followed by a brief one-line human-readable summary, and stop — control returns to `CALLER`.
 
-**Otherwise** (a human is driving this conversation directly), you MUST always complete the following steps. Do not stop after saving.
-
-### Step 1 — Ask about the improvement wizard
-
-Ask the user this exact question:
-
-> The spec for **{module-name}** has been generated.
-> Would you like to run the improvement wizard to review and refine each section interactively?
->
-> - **yes** → opens the spec improvement wizard
-> - **no** → goes straight to the QA pipeline offer
-
-### Step 2 — Route based on user response
-
-**If the user says yes (or ok / sure / yep / proceed):**
-
-Use the **Agent** tool immediately to dispatch the improvement wizard agent:
-
-```
-Dispatch subagent: spec-wizard-improve
-
-SPEC_FILE: {absolute-path-to-spec}
-PROJECT_ROOT: {project-root}
-
-Run the interactive spec improvement wizard on the spec file above.
-```
-
-**If the user says no (or nope / skip / later / not now):**
-
-Use the **Agent** tool immediately to dispatch the pipeline-offer agent:
-
-```
-Dispatch subagent: spec-wizard-pipeline
-
-SPEC_FILE: {absolute-path-to-spec}
-PROJECT_ROOT: {project-root}
-
-Show the spec summary and offer the QA pipeline for the spec above.
-```
-
-> These two steps are mandatory. Never end the conversation after saving the spec file without completing them. Do not try to invoke `spec-wizard:improve` or `spec-wizard:pipeline-offer` via the Skill tool — this agent's `tools:` frontmatter does not grant Skill or Agent(qa-coordinator) access, so that path is a dead end. Always go through the dedicated agent via the Agent tool instead.
+> This agent is always dispatched by `qa-coordinator`'s Stage 0 bootstrap — `CALLER` is always present (`pipeline-on-spec-dispatch.sh`'s entry-point redirect gate guarantees this; a direct dispatch of this agent without `CALLER: qa-coordinator` is blocked and redirected before it ever reaches this point). This agent itself never asks about the improvement wizard and never dispatches `spec-wizard-improve` or `spec-wizard-pipeline` — that decision belongs to `qa-coordinator`, which owns it as part of its own pipeline (see `qa-coordinator.md`'s Stage 0.5). Always stop here and let `CALLER` continue.

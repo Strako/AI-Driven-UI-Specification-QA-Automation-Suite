@@ -50,8 +50,9 @@ EOF
 mkdir -p Platform
 
 # 3. (Optional) Create the requirements folder
-#    Place .xlsx, .csv, or .md requirement files here — the spec generator
-#    will scan this folder automatically when you type "docs" at the enrichment prompt
+#    Place .md or .csv requirement files here — the spec generator scans this
+#    folder automatically before every first-time spec save, no prompt needed
+#    (.xlsx files are skipped as unreadable — re-export as .md or .csv)
 mkdir -p docs
 
 # 4. (Optional) Set Figma token if you plan to use design comparison
@@ -72,40 +73,51 @@ The system uses seven Claude agents organized into three stages: spec creation, 
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                            FULL PIPELINE                                   │
 │                                                                            │
+│  qa-coordinator  ◄── always the entry point for a spec-creation request   │
+│       │              (a PreToolUse hook redirects any direct dispatch     │
+│       │               of spec-wizard-generate back here)                  │
+│       ▼                                                                   │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  SPEC CREATION (3 agents)                                           │   │
+│  │  SPEC CREATION — Stage 0, dispatched by qa-coordinator              │   │
 │  │                                                                     │   │
 │  │  spec-wizard-generate                                               │   │
 │  │       │                                                             │   │
 │  │       ├── 1. Playwright analysis (DOM + screenshots)                │   │
 │  │       ├── 2. Auto-generate spec in memory                           │   │
-│  │       ├── 3. [optional] Requirements enrichment                     │   │
-│  │       │        └── from file path (.md/.csv/.xlsx) or docs/ folder  │   │
-│  │       └── 4. Save {module}-description.md                           │   │
-│  │              │                                                      │   │
-│  │              ├── yes ──► spec-wizard-improve (section refinement)   │   │
-│  │              │                    │                                 │   │
-│  │              └── no ─────────────┼──► spec-wizard-pipeline          │   │
-│  │                                  └──► spec-wizard-pipeline          │   │
+│  │       ├── 3. Automatic docs/ folder enrichment (silent, no          │   │
+│  │       │        question asked — applied only if docs/ exists)       │   │
+│  │       └── 4. Save {module}-description.md, report back to          │   │
+│  │              qa-coordinator (never dispatches another agent)        │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                       │
-│                              yes to pipeline                               │
+│                    qa-coordinator attempts Stage 1 immediately             │
+│                    (gated once: "run the improvement wizard first?")       │
+│                              yes ──► spec-wizard-improve ──► reports       │
+│                              │        back to qa-coordinator directly      │
+│                              no ──────────────────────────┐                │
+│                                    │◄───────────────────────┘             │
 │                                    ▼                                       │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  QA PIPELINE (qa-coordinator + 2 agents)                            │   │
+│  │  QA PIPELINE (qa-coordinator + 2 agents) — always runs through,     │   │
+│  │  no "run the pipeline?" question anywhere in this default flow      │   │
 │  │                                                                     │   │
 │  │  qa-coordinator                                                     │   │
 │  │       │                                                             │   │
 │  │       ├── test-generation ──► test-cases.md + test-data.md          │   │
+│  │       │        (auto-filled from vars.md + inference only if        │   │
+│  │       │         requested upfront — otherwise left blank)           │   │
 │  │       │                                                             │   │
-│  │       │   [PAUSE — user fills test-data.md]                         │   │
+│  │       │   [PAUSE — user fills test-data.md, ALWAYS, regardless      │   │
+│  │       │    of auto mode, unless auto-fill was requested upfront]    │   │
 │  │       │                                                             │   │
 │  │       └── test-execution ──► test-report-{module}.md + screenshots  │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> This pause is enforced by the `pipeline-on-execution-dispatch.sh` `PreToolUse` hook — not just an instruction the coordinator agent might skip. It's skipped automatically only when the session is in Claude Code's **auto** permission mode; otherwise the pipeline blocks until you confirm `test-data.md` is filled in. See **Stage Gate — Test Data Confirmation** below.
+> A **separate standalone path** — explicitly invoking `spec-wizard-improve` or `spec-wizard-pipeline` by name on an existing spec, not through `qa-coordinator` — keeps a real "run the pipeline? yes/no" question via `spec-wizard-pipeline`. That path is for deliberate individual-agent use; it never applies to the default entry point above. See **Pipeline State Machine** below for the full gated flow.
+
+> This pause is enforced by the `pipeline-on-execution-dispatch.sh` `PreToolUse` hook — not just an instruction the coordinator agent might skip. Unlike every other pause in this pipeline, it is **not** skipped by Claude Code's **auto** permission mode — the only way to skip it is to explicitly ask for automatic test data generation in your initial request. Otherwise the pipeline always blocks until you confirm `test-data.md` is filled in, even in auto mode. See **Stage Gate — Test Data Confirmation** below.
 
 ---
 
@@ -148,9 +160,11 @@ This repository **is** the Claude Code plugin. Its root is the plugin root — w
 ├── hooks/                           executed in place via ${CLAUDE_PLUGIN_ROOT}/hooks/...
 │   ├── pipeline-on-user-prompt.sh   Routes user responses to next pipeline stage
 │   ├── pipeline-on-spec-created.sh  Detects spec file writes → updates state
+│   ├── pipeline-on-spec-write-gate.sh  Gates first-time spec saves: automatic docs/ enrichment check (no prompt, no permission-mode dependency)
+│   ├── pipeline-on-spec-dispatch.sh    Redirects direct spec-wizard-generate dispatches to qa-coordinator; gates the wizard-offer (qa-coordinator's own Stage 1 dispatch) and the standalone pipeline-offer hand-off
 │   ├── pipeline-on-tests-generated.sh  Detects test-cases.md writes → updates state → creates evidences/
 │   ├── pipeline-on-report-written.sh   Detects report writes → marks complete
-│   ├── pipeline-on-execution-dispatch.sh  Gates test-execution dispatch: test-data confirmation, then execution roughness (both skipped in auto mode)
+│   ├── pipeline-on-execution-dispatch.sh  Gates test-execution dispatch: test-data confirmation (skipped ONLY by an explicit auto-fill request, never by auto mode alone), then execution roughness (skipped in auto mode)
 │   ├── pipeline-verify-report.sh       Enforces that test-report-{module}.md really exists on disk (SubagentStop/Stop) → recovers/synthesizes it if not
 │   └── verify_execution_report.py      Parsing/validation/recovery logic for pipeline-verify-report.sh
 │
@@ -201,18 +215,14 @@ YOUR_PROJECT/
 
 > **Model:** Opus · **Skill:** `spec-wizard:auto-generate` · **MCP:** `playwright_headed`
 
-Navigates to a live page with Playwright MCP, analyzes the full DOM (including scrolling, tabs, and expandable sections), and produces a complete `{module}-description.md` spec file in one pass — no interactive interview required.
+Navigates to a live page with Playwright MCP, analyzes the full DOM (including scrolling, tabs, and expandable sections), and produces a complete `{module}-description.md` spec file in one pass — no interactive interview required. This agent is always dispatched by **`qa-coordinator`**'s Stage 0 bootstrap — it is not a top-level entry point for a human's "create a spec" request; a `PreToolUse` hook (`pipeline-on-spec-dispatch.sh`) blocks and redirects any direct dispatch that doesn't carry qa-coordinator's `CALLER` marker.
 
-Before writing the spec to disk, optionally enriches it with project requirements:
+Before writing the spec to disk, automatically enriches it with project requirements — silently, with no question ever asked:
 
-- **File path** → reads the provided `.md`, `.csv`, or `.xlsx` file, extracts requirements relevant to this view, and refines the spec in memory
-- **`docs`** → auto-scans the `docs/` folder at the project root for requirement files and applies relevant ones. The agent derives the project root by locating `vars.md` via Glob — so "project root" always means the folder that contains your `vars.md`. If `docs/` does not exist or is empty, the agent prints a warning and saves the spec as generated without failing.
-- **`skip`** → saves the spec as generated without enrichment
+- **`docs/` folder** → if a `docs/` folder exists at the project root (derived by locating `vars.md` via Glob) with at least one readable `.md`/`.csv` file, a `PreToolUse` hook (`pipeline-on-spec-write-gate.sh`) blocks the very first save of the spec exactly once so the agent scans those files, extracts requirements relevant to this view, and refines the spec in memory before retrying. If `docs/` doesn't exist or has nothing readable, the write proceeds immediately — no prompt, no delay, in every mode.
+- **`REQUIREMENTS_NOTE`** → when dispatched by `qa-coordinator`'s Stage 0 with inline business rules extracted from the original request (e.g. multi-role credential pairs), those are applied in addition to, not instead of, the `docs/` check above.
 
-After saving, offers two paths:
-
-- **Yes** → launches `spec-wizard-improve` for interactive section-by-section refinement
-- **No** → launches `spec-wizard-pipeline` to offer the QA pipeline
+After saving, always emits `---SPEC-GENERATED---` and stops — it never dispatches another agent itself. Control returns to `qa-coordinator`, which owns the decision of whether to offer the improvement wizard next (see `qa-coordinator`'s Stage 0.5 below).
 
 | Input | Required | Description |
 |---|---|---|
@@ -240,12 +250,13 @@ After saving, offers two paths:
 
 Takes an existing spec file and walks through all 9 content sections in order. For each section it shows the current content, asks targeted questions, applies changes, and waits for explicit confirmation before advancing.
 
-After saving, automatically invokes `spec-wizard-pipeline`.
+After saving: if `CALLER` is present (dispatched by `qa-coordinator`'s Stage 0.5), reports back directly and stops — `qa-coordinator` continues the full pipeline on its own, no further question. If `CALLER` is absent (invoked standalone by a human on an existing spec), automatically invokes `spec-wizard-pipeline` instead, which asks a real "run the pipeline?" question.
 
 | Input | Required | Description |
 |---|---|---|
 | `SPEC_FILE` | Yes | Path to the existing spec `.md` file |
 | `PROJECT_ROOT` | No | Project root path (auto-detected if omitted) |
+| `CALLER` | No | Name of the orchestrating agent (`qa-coordinator`) when dispatched non-standalone — changes completion behavior above |
 
 **Sections reviewed (in order):** Screen Identification · Origin Context · Components (one at a time) · View-Level Fields · Screen States · Related Views · Business Rules · Actions and Transitions · Detailed Flow Description
 
@@ -255,7 +266,7 @@ After saving, automatically invokes `spec-wizard-pipeline`.
 
 > **Model:** Opus · **Skill:** `spec-wizard:pipeline-offer`
 
-Reads a completed spec file, shows a structured summary (components, fields, states, rules, actions), and offers to launch the full QA pipeline via `qa-coordinator`.
+Reads a completed spec file, shows a structured summary (components, fields, states, rules, actions), and offers to launch the full QA pipeline via `qa-coordinator`. **This is a standalone tool, not part of qa-coordinator's default flow** — it's only reached by explicitly invoking `spec-wizard-improve` or `spec-wizard-pipeline` by name on an existing spec. In that context, the "run the pipeline? yes/no" question it asks is a real, deliberate choice — unlike `qa-coordinator`'s own default flow, which has no such question and always runs the pipeline through to a report once reached.
 
 | Input | Required | Description |
 |---|---|---|
@@ -266,11 +277,11 @@ Reads a completed spec file, shows a structured summary (components, fields, sta
 
 ### `qa-coordinator` — Pipeline Orchestrator
 
-> **Model:** Opus · **Dispatches:** `spec-wizard-generate`, `test-generation`, `test-execution`
+> **Model:** Opus · **Dispatches:** `spec-wizard-generate`, `spec-wizard-improve`, `test-generation`, `test-execution`
 
-Collects a spec file path, then runs the full pipeline or individual stages. Always uses headed browser mode. Pauses between generation and execution for the user to fill `test-data.md` — enforced by a `PreToolUse` hook, not just an instruction, and skipped automatically when the session is in Claude Code's **auto** permission mode (see **Stage Gate — Test Data Confirmation** below). After execution, the final summary includes the results breakdown plus an **execution window** (`{STARTED} – {COMPLETED}`) taken from the test-execution report timestamps.
+Collects a spec file path, then runs the full pipeline or individual stages. Always uses headed browser mode. Optionally pauses once, right after a fresh spec bootstrap, to offer the improvement wizard (**Stage 0.5**, gated by a `PreToolUse` hook — not a real "run the pipeline?" fork, just whether to review the spec first; see below). Also pauses between generation and execution for the user to fill `test-data.md` — enforced by a `PreToolUse` hook, not just an instruction. Unlike every other pause in this pipeline, this one is **not** affected by Claude Code's **auto** permission mode; it only skips when the initial request explicitly asked for automatic test data generation (see **Stage Gate — Test Data Confirmation** below). After execution, the final summary includes the results breakdown plus an **execution window** (`{STARTED} – {COMPLETED}`) taken from the test-execution report timestamps.
 
-This is also the default entry point for a plain-language "spec + test this page/module" request, even without an explicit `@qa-coordinator` mention or a full URL. It always reads `vars.md` first (for `BASE_URL` and existing credentials) before asking the user anything. If no matching spec file exists yet, it doesn't stop and ask for a URL — it runs **Stage 0 — Spec Bootstrap**: derives `PAGE_URL`/`MODULE_NAME`/`AUTH_REQUIRED` and any role-based credential variables (e.g. `CLIENT_EMAIL`/`CLIENT_PASSWORD`, `PROVIDER_EMAIL`/`PROVIDER_PASSWORD`) from the request and `vars.md`, then dispatches `spec-wizard-generate` non-interactively (`CALLER: qa-coordinator`) to create it before continuing into Stage 1.
+This is the entry point for **any** spec-creation or "spec + test this page/module" request — even a bare "create a spec for X" with no mention of tests, even without an explicit `@qa-coordinator` mention or a full URL. A `PreToolUse` hook (`pipeline-on-spec-dispatch.sh`) enforces this deterministically: any direct dispatch of `spec-wizard-generate` (or its legacy alias `spec-wizard`) that doesn't carry qa-coordinator's own `CALLER` marker is blocked and redirected here instead. It always reads `vars.md` first (for `BASE_URL` and existing credentials) before asking the user anything. If no matching spec file exists yet, it doesn't stop and ask for a URL — it runs **Stage 0 — Spec Bootstrap**: derives `PAGE_URL`/`MODULE_NAME`/`AUTH_REQUIRED` and any role-based credential variables (e.g. `CLIENT_EMAIL`/`CLIENT_PASSWORD`, `PROVIDER_EMAIL`/`PROVIDER_PASSWORD`) from the request and `vars.md`, then dispatches `spec-wizard-generate` non-interactively (`CALLER: qa-coordinator`) to create it before continuing into Stage 1.
 
 | Mode | Trigger |
 |---|---|
@@ -278,11 +289,11 @@ This is also the default entry point for a plain-language "spec + test this page
 | **Generate Only** | "generate", "test cases only", "create tests" |
 | **Execute Only** | "execute", "run tests", "only execute" |
 
-Every attempt to dispatch `test-execution` passes through the same `pipeline-on-execution-dispatch.sh` `PreToolUse` hook, which runs two ordered gates. In Claude Code's **auto** permission mode, both gates are skipped unconditionally on the first attempt — nobody is necessarily watching to answer a question, so the dispatch goes straight through and test-execution runs against whatever `test-data.md` currently holds, defaulting `EXECUTION_LEVEL` to `3` (All). Outside of auto mode, each gate below blocks the dispatch (and `qa-coordinator` asks a question) until satisfied, then the retry moves on to the next gate.
+Every attempt to dispatch `test-execution` passes through the same `pipeline-on-execution-dispatch.sh` `PreToolUse` hook, which runs two ordered gates with **different** relationships to Claude Code's **auto** permission mode — see each gate below.
 
-**Test Data Confirmation Gate** — checked first. If the pipeline state shows test cases were just generated and no confirmation reply has been seen yet for this module, the hook blocks the dispatch and `qa-coordinator` asks you to fill in `test-data.md` and reply when ready (e.g. "done"). The `UserPromptSubmit` hook recognizes the reply and retries the dispatch, which then moves on to the roughness gate below.
+**Test Data Confirmation Gate** — checked first, and **not** affected by auto mode. If the pipeline state shows test cases were just generated and no confirmation reply has been seen yet for this module, the hook blocks the dispatch and `qa-coordinator` asks you to fill in `test-data.md` and reply when ready (e.g. "done") — this happens **even in auto mode**. The `UserPromptSubmit` hook recognizes the reply and retries the dispatch, which then moves on to the roughness gate below. The only way to skip this gate is to explicitly ask for automatic test data generation in your initial request (see `test-generation`'s `AUTO_FILL_TEST_DATA` below) — `qa-coordinator` then includes `AUTO_TEST_DATA: true` on the dispatch and the hook lets it through unconditionally.
 
-**Execution Roughness Gate** — checked once test data is confirmed (or skipped via auto mode):
+**Execution Roughness Gate** — checked once test data is confirmed (or auto-generation was requested upfront). This one **is** affected by auto mode:
 
 - If the initiating message already states a level explicitly (e.g. "just run the critical tests"), that always wins — no question is asked, in either mode.
 - Otherwise, in **auto** mode, execution defaults to running **all** test cases (level 3).
@@ -297,7 +308,7 @@ Every attempt to dispatch `test-execution` passes through the same `pipeline-on-
 ```
 spec file → test-generation → test-cases.md + test-data.md
                                     │
-                    [GATE — test-data confirmation; skipped in auto mode]
+        [GATE — test-data confirmation; skipped ONLY if auto-fill was requested upfront]
                                     │
                     [GATE — execution roughness level; skipped in auto mode or if pre-stated]
                                     │
@@ -310,14 +321,14 @@ spec file → test-generation → test-cases.md + test-data.md
 
 > **Model:** Sonnet · **Skill:** `test-generation:process`
 
-Reads a spec file (never `vars.md`) and produces two artifacts:
+Reads a spec file and produces two artifacts:
 
-- `test-cases.md` — complete, data-agnostic test cases using `${field-name}` placeholders for values and `<<view-id>>` / `{{BASE_URL}}` for navigation — the domain is never resolved here, so the same file runs unmodified against any environment
-- `test-data.md` — fillable template with empty slots organized by scenario
+- `test-cases.md` — complete, data-agnostic test cases using `${field-name}` placeholders for values and `<<view-id>>` / `{{BASE_URL}}` for navigation — the domain is never resolved here, so the same file runs unmodified against any environment. `vars.md` is never read for this artifact.
+- `test-data.md` — organized by scenario. Empty fill-in slots by default; if `AUTO_FILL_TEST_DATA: true` is set (only when `qa-coordinator` parsed an explicit "generate test data automatically" request at Startup), every field is instead filled with a concrete value — a real credential read from `vars.md` for fields tied to a named variable, or a plausible inferred value otherwise. Signup/registration credential fields are always left blank regardless, since `test-execution` generates and confirms those itself via Yopmail.
 
 **Coverage types:** Happy Path · Smoke · Functional · Edge Cases · Exploratory · Design Comparison (when design reference is provided)
 
-Every test case also gets a **Severity** — Critical, Mid, or Low — judged by business impact rather than derived mechanically from Type (Design Comparison is always Critical). This is what lets `test-execution` later scope a run to only the highest-severity tests. The completion signal includes a `SEVERITY_BREAKDOWN` (Critical/Mid/Low counts) alongside the existing per-type breakdown.
+Every test case also gets a **Severity** — Critical, Mid, or Low — judged by business impact rather than derived mechanically from Type (Design Comparison is always Critical). This is what lets `test-execution` later scope a run to only the highest-severity tests. The completion signal includes a `SEVERITY_BREAKDOWN` (Critical/Mid/Low counts) alongside the existing per-type breakdown and a `TEST_DATA_AUTO_FILLED` flag.
 
 ---
 
@@ -325,7 +336,7 @@ Every test case also gets a **Severity** — Critical, Mid, or Low — judged by
 
 > **Model:** Sonnet · **Skill:** `test-execution:process` · **MCP:** `playwright_headed`, `figma`, `pencil`
 
-Reads `test-cases.md`, `test-data.md`, and `vars.md`, hydrates `${field-name}` placeholders with concrete values, and resolves every `<<view-id>>` / `{{BASE_URL}}` token into a real URL using `vars.md` — this is the only step in the whole pipeline where `BASE_URL` becomes a concrete domain. Before running anything, filters test cases by `EXECUTION_LEVEL` against their `Severity` (see **Execution Roughness Gate** above) — excluded cases are marked `⏭ SKIPPED` and never executed. Executes every remaining test sequentially via Playwright MCP and captures a timestamped screenshot for every test case regardless of outcome (✅ PASS or ❌ FAIL). Since the agent has no `Bash`/`date` access, every timestamp — report header, Executive Summary, screenshot filenames — is obtained by calling `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate` to read the clock inside the browser page. For Design Comparison test cases, retrieves the original design from Figma MCP or Pencil MCP and compares it against the live implementation, documenting all visual and structural discrepancies. For account-creation test cases, resolves a persistent `AUTH_EMAIL`/`AUTH_PASSWORD` test identity (generating and persisting one to `vars.md` on first use, see **Configuration** below) and verifies any OTP or confirmation email via a second tab on Yopmail — the same shared procedure (`${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md`) that `spec-wizard-generate` uses when a spec's target page itself requires creating an account first (`AUTH_MODE=new`).
+Reads `test-cases.md`, `test-data.md`, and `vars.md`, hydrates `${field-name}` placeholders with concrete values, and resolves every `<<view-id>>` / `{{BASE_URL}}` token into a real URL using `vars.md` — this is the only step in the whole pipeline where `BASE_URL` becomes a concrete domain. Before running anything, filters test cases by `EXECUTION_LEVEL` against their `Severity` (see **Execution Roughness Gate** above) — excluded cases are marked `⏭ SKIPPED` and never executed. Executes every remaining test sequentially via Playwright MCP and captures a timestamped screenshot for every test case regardless of outcome (✅ PASS or ❌ FAIL). Since the agent has no `Bash`/`date` access, every timestamp — report header, Executive Summary, per-test-case timestamps, screenshot filenames — is obtained by calling `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate` to read the clock inside the browser page. Every executed test case's own timestamp and evidence file path are written directly into its row in the report's section tables, not just cross-referenced separately in the Captured Screenshots table. For Design Comparison test cases, retrieves the original design from Figma MCP or Pencil MCP and compares it against the live implementation, documenting all visual and structural discrepancies. For account-creation test cases, resolves a persistent `AUTH_EMAIL`/`AUTH_PASSWORD` test identity (generating and persisting one to `vars.md` on first use, see **Configuration** below) and verifies any OTP or confirmation email via a second tab on Yopmail — the same shared procedure (`${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md`) that `spec-wizard-generate` uses when a spec's target page itself requires creating an account first (`AUTH_MODE=new`).
 
 | Input | Required | Description |
 |---|---|---|
@@ -344,7 +355,7 @@ Reads `test-cases.md`, `test-data.md`, and `vars.md`, hydrates `${field-name}` p
 
 > **Model:** Opus · Delegates to `spec-wizard-generate`
 
-Kept for backward compatibility. When invoked, behaves as `spec-wizard-generate`. Prefer using the specific agents directly.
+Kept for backward compatibility. When invoked, behaves as `spec-wizard-generate`. Prefer using the specific agents directly. Subject to the same entry-point redirect as `spec-wizard-generate` — `pipeline-on-spec-dispatch.sh` blocks any direct dispatch of this agent too and redirects to `qa-coordinator`.
 
 ---
 
@@ -368,52 +379,116 @@ Each agent loads its skill file at the start of every session. Skills contain st
 The system uses shell hooks and a `.pipeline-state` file to track progress through the automation pipeline. State transitions happen automatically based on file writes and user responses.
 
 ```
-[spec-wizard-generate auto-generates spec + optional requirements enrichment]
+[human, or top-level Claude, attempts to dispatch spec-wizard-generate directly]
                                     ↓
-                            spec written to disk
+                    Agent-tool dispatch attempted (subagent_type = spec-wizard-generate)
                                     ↓
-SPEC_AUTO_GENERATED → user says yes → WIZARD_REQUESTED → wizard saves → WIZARD_COMPLETE
-                    → user says no  → PIPELINE_OFFER_REQUESTED
-                                                         ↓
-                                              qa-coordinator dispatched
-                                                         ↓
+                    ┌────── carries CALLER: qa-coordinator? ──────┐
+                   yes                                            no
+                    ↓                                              ↓
+        (bootstrap dispatch — let through,          BLOCKED — redirect to qa-coordinator
+         record SPEC_BOOTSTRAP marker)                            ↓
+                    ↓                                qa-coordinator dispatched instead,
+                    │                                 which runs its own Stage 0 bootstrap
+                    │                                 (dispatches spec-wizard-generate itself,
+                    │                                  now WITH the CALLER marker) ──────┐
+                    ↓                                                                    │
+[spec-wizard-generate analyzes the page, builds the spec draft in memory] ◄──────────────┘
+                                    ↓
+                    Write attempted (spec file, first save for this module)
+                                    ↓
+        ┌── bootstrap marker present, OR docs/ has nothing readable ──┐
+        ↓                                                             │
+  Write succeeds                                                      │
+        ↓                                                    docs/ has readable .md/.csv files
+  SPEC_AUTO_GENERATED                                                 │
+        │                                          DOCS_ENRICHMENT marker touched,
+        │                                          Write blocked once (no human involved)
+        │                                                             ↓
+        │                                        agent scans docs/, applies relevant
+        │                                        requirements to in-memory draft,
+        │                                        retries Write → succeeds
+        │                                                             ↓
+        └─────────────────────────────────────────────→ SPEC_AUTO_GENERATED
+                                    ↓
+        qa-coordinator (Stage 1) attempts to dispatch test-generation
+        immediately — includes PIPELINE_STAGE: test-generation
+                                    ↓
+        ┌── spec NOT bootstrapped this run, OR wizard already resolved ──┐
+        ↓                                                                │
+  (gate is a no-op — this only ever fires right after a fresh            │
+   bootstrap in the SAME run; a pipeline run against a spec the          │
+   user pointed to directly skips straight past it)                     │
+        │                                              spec WAS just bootstrapped
+        │                                              this run, wizard not yet resolved
+        │                                                                ↓
+        │                                              ┌────── auto mode ──────┐
+        │                                              ↓                       │
+        │                                    (skip wizard by default)   not auto mode
+        │                                              │                       ↓
+        │                                              │         WIZARD_OFFER_PENDING (blocked)
+        │                                              │                       ↓
+        │                                              │        ┌── yes ───────┴────── no ──┐
+        │                                              │        ↓                           ↓
+        │                                              │  qa-coordinator dispatches   WIZARD_OFFER_ANSWERED
+        │                                              │  spec-wizard-improve                ↓
+        │                                              │  (CALLER: qa-coordinator)    (retry dispatch)
+        │                                              │        ↓                           │
+        │                                              │  wizard saves → WIZARD_COMPLETE     │
+        │                                              │  → reports back to qa-coordinator   │
+        │                                              │  (does NOT dispatch                 │
+        │                                              │   spec-wizard-pipeline — CALLER      │
+        │                                              │   present skips that entirely)      │
+        │                                              │        ↓                           │
+        │                                              └──── retry Stage 1 dispatch ─────────┘
+        └─────────────────────────────────────────────────────────┬──────────────────────────┘
+                                                                     ↓
+                                                          test-generation dispatched
+                                                                     ↓
                                               GENERATION_COMPLETE
+                                        (test-generation auto-filled test-data.md IF
+                                         REQUESTED_AUTO_TEST_DATA was set at Startup)
                                                          ↓
-                                    test-execution dispatch attempted (immediately)
+                    test-execution dispatch attempted (immediately, includes
+                        AUTO_TEST_DATA: true ONLY if auto-fill was requested)
                                                          ↓
-                                    ┌──────────────── auto mode ────────────────┐
-                                    ↓                                          │
-                          test-execution dispatched                           │
-                                    │                                 not auto mode
-                                    ↓                                          │
-                           EXECUTION_COMPLETE                                 ↓
-                                                          test data confirmed for this module?
-                                                                                │
-                                                    ┌────── no ────────────────┴────── yes ──┐
-                                                    ↓                                         ↓
-                                        (blocked; state stays                     EXECUTION_LEVEL known?
-                                         GENERATION_COMPLETE)                                 │
-                                                    ↓                          ┌── no ────────┴──── yes ──┐
-                                        user says "done" / "ready"             ↓                          ↓
-                                                    ↓                AWAITING_EXECUTION_LEVEL   test-execution dispatched
-                                             TEST_DATA_READY                   ↓                          ↓
-                                                    ↓                user answers 1 / 2 / 3        EXECUTION_COMPLETE
-                                                    └──────── retry dispatch ────┘
-                                                       (re-enters "dispatch attempted" above,
-                                                        now with test data confirmed)
+                            ┌────────── AUTO_TEST_DATA: true present? ──────────┐
+                           yes                                                  no
+                            ↓                                                    ↓
+                (test-data gate bypassed —                     test data confirmed for this module?
+                 NOT affected by auto mode                                       │
+                 at all; only this explicit                    ┌────── no ──────┴────── yes ──┐
+                 upfront request skips it)                      ↓                              ↓
+                            │                        (blocked; state stays        EXECUTION_LEVEL known?
+                            │                         GENERATION_COMPLETE —                    │
+                            │                         even in auto mode)          ┌── no ───────┴──── yes ──┐
+                            │                                   ↓                  ↓                        ↓
+                            │                     user says "done" / "ready"  AWAITING_       test-execution
+                            │                                   ↓             EXECUTION_LEVEL  dispatched
+                            │                            TEST_DATA_READY            ↓                ↓
+                            │                                   │           user answers 1/2/3  EXECUTION_
+                            │                                   └─── retry ──────────┘           COMPLETE
+                            └───────────────────────────────────────────────────────┘
+                            (once past the test-data gate, still passes through the
+                             Execution Roughness Gate, which IS bypassed by auto mode
+                             — see the two-gate table under `pipeline-on-execution-dispatch.sh`)
 ```
 
-> The requirements enrichment step happens **before** the spec is written to disk, so it does not introduce new pipeline states. The `SPEC_AUTO_GENERATED` state is set only after the enriched spec is saved. `qa-coordinator` no longer waits on its own before attempting the Stage 2 dispatch — it attempts immediately after Stage 1, and `pipeline-on-execution-dispatch.sh` decides whether that attempt is allowed through, blocked for test-data confirmation, or blocked for the roughness level. `AWAITING_EXECUTION_LEVEL` is a detour that only occurs after test data is confirmed — it always resolves back into a dispatch retry, now carrying `EXECUTION_LEVEL`, at which point the test-data gate is already satisfied and only the roughness gate remains.
+> This diagram is qa-coordinator's **default** flow — the only one reachable from a generic "create a spec for X" or "spec + test this page" request. There is no "run the QA pipeline?" fork anywhere in it; reaching qa-coordinator at all already commits to running the full pipeline through to a report. A **separate, standalone path** exists purely for explicit individual-agent use: invoking `spec-wizard-improve` or `spec-wizard-pipeline` **by name** on an existing spec (not through qa-coordinator) keeps the old behavior — the wizard, if used, auto-chains into `spec-wizard-pipeline`, which shows a spec summary and asks a real "run the pipeline? yes/no" (gated by the same `pipeline-on-spec-dispatch.sh`, `QA_PIPELINE_OFFER_PENDING`/`QA_PIPELINE_CONFIRMED` states) before dispatching `qa-coordinator` itself. These two paths never overlap: qa-coordinator's own Stage 0.5 dispatches `spec-wizard-improve` with `CALLER: qa-coordinator`, which skips the `spec-wizard-pipeline` hand-off entirely and reports straight back.
+>
+> Every hand-off between stages follows the same pattern: the dispatching agent always **attempts** the next step immediately — it never decides on its own to ask a question or wait — and a `PreToolUse` hook is the only place that can see Claude Code's `permission_mode`, so it alone decides whether to let the attempt through silently or block it (`exit 2`) with instructions to ask a human first. Nothing in this pipeline relies on the model correctly inferring "we're in auto mode, skip this" from its own prompt text — that inference is impossible for the model to make reliably since `permission_mode` is never exposed to it directly, only to hooks. Not every gate treats auto mode the same way, though: the **entry-point redirect** and the **docs/ enrichment gate** are unconditional (they never depend on permission_mode at all — the first is a routing rule, the second is a pure filesystem check), the **test-data confirmation gate** deliberately ignores auto mode (it only bypasses on an explicit upfront auto-fill request), while the **wizard-offer** (qa-coordinator's Stage 0.5), the standalone **pipeline-offer**, and the **execution roughness** gates all do bypass in auto mode. `SPEC_BOOTSTRAP` and `DOCS_ENRICHMENT` are per-module marker files (not `.pipeline-state` values) — the first records that qa-coordinator's Stage 0 dispatch is non-interactive by contract, the second records that the docs/ check has already been resolved for this module's first save so a retry doesn't re-block. `AWAITING_EXECUTION_LEVEL` is a detour that only occurs after test data is confirmed — it always resolves back into a dispatch retry, now carrying `EXECUTION_LEVEL`, at which point the test-data gate is already satisfied and only the roughness gate remains.
 
 **Hooks:**
 
 | Hook | Trigger | Purpose |
 |---|---|---|
-| `pipeline-on-user-prompt.sh` | Every user message | Routes "yes/no/done" responses to next stage; resolves 1/2/3 execution-level replies |
-| `pipeline-on-spec-created.sh` | After Write tool | Detects spec file creation in `Platform/` |
+| `pipeline-on-user-prompt.sh` | Every user message | Routes replies (wizard yes-no / pipeline yes-no / "done" / 1-2-3) to the next stage |
+| `pipeline-on-spec-created.sh` | After Write tool | Detects spec file creation in `Platform/`, tracks `SPEC_AUTO_GENERATED` / `WIZARD_COMPLETE` |
+| `pipeline-on-spec-write-gate.sh` | Before Write tool | Gates the *first* save of a new module's spec file: checks whether the project's `docs/` folder has anything readable and, if so, blocks the write exactly once (no human involved, no dependency on `permission_mode`) so the agent applies it and retries. No-op if `docs/` is empty/absent, or the file already exists (a resave). |
+| `pipeline-on-spec-dispatch.sh` | Before the Agent tool dispatches an agent | Three things: (1) **entry-point redirect** — blocks any dispatch of `spec-wizard-generate`/`spec-wizard` lacking qa-coordinator's `CALLER` marker, regardless of `permission_mode`; (2) gates `qa-coordinator → test-generation` (Stage 1), the wizard-offer question, but **only** right after a Stage 0 bootstrap in the same run — a pipeline run against a pre-existing spec skips this gate entirely; (3) gates the **standalone-only** `spec-wizard-pipeline → qa-coordinator` hand-off (run-the-pipeline offer). (2) and (3) use the same auto-mode-bypass pattern as the execution-dispatch gate. Also records the `SPEC_BOOTSTRAP` marker for qa-coordinator's Stage 0 dispatch |
 | `pipeline-on-tests-generated.sh` | After Write tool | Detects `test-cases.md` creation; also creates the module's `evidences/` subfolder up front, since `test-execution` has no `Bash`/mkdir access |
 | `pipeline-on-report-written.sh` | After Write tool | Detects `test-report-*.md` creation |
-| `pipeline-on-execution-dispatch.sh` | Before the Agent tool dispatches test-execution | Checks `permission_mode`; in auto mode allows the dispatch through unconditionally, otherwise blocks until test data is confirmed for the module, then blocks again until `EXECUTION_LEVEL` is set |
+| `pipeline-on-execution-dispatch.sh` | Before the Agent tool dispatches test-execution | Two independently-gated checks: test-data confirmation (bypassed **only** by an explicit `AUTO_TEST_DATA: true` marker — never by `permission_mode` alone) and execution roughness (bypassed by auto mode, defaulting to level 3) |
 | `pipeline-verify-report.sh` | `SubagentStop` (agent: `test-execution`) and every `Stop` | Reads the agent's own `---EXECUTION-COMPLETE---` signal from the transcript and checks the `REPORT` path it names is really on disk and structurally complete (required sections present, every evidence screenshot linked, timestamps present). If not, recovers the file — from the model's own captured `Write` tool-call content if one exists in the transcript, otherwise a synthesized report built from the signal's counts plus the real files in `evidences/` — then blocks the stop once (exit 2) so the model gets a chance to overwrite it with the authoritative version before finishing. This is what guarantees the report is never just a claim in the chat transcript. |
 
 ---
@@ -493,31 +568,39 @@ Every UI screen is described in a single `{module}-description.md` file followin
 
 ## Workflow Examples
 
-### Create a spec from a live page (auto-generate + requirements enrichment + improve)
+### Create a spec from a live page (auto-generate + docs/ enrichment + improve)
 
 ```
-Invoke: spec-wizard-generate
+Invoke: qa-coordinator          ← always the entry point, even for a spec-only request
 "Create a spec for /vacantes, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD, destination /vacantes"
+→ Stage 0 bootstrap dispatches spec-wizard-generate non-interactively (CALLER: qa-coordinator)
 → auto-generates spec in memory from live DOM analysis
-→ asks: "Requirements enrichment?" → provide /path/to/requirements.md (or "docs" / "skip")
-→ extracts relevant requirements → refines spec in memory
-→ saves enriched Platform/Vacantes/vacantes-description.md
-→ asks: "Run the improvement wizard?" → yes
-→ spec-wizard-improve walks through 9 sections
-→ spec-wizard-pipeline shows summary and offers QA pipeline → yes
-→ qa-coordinator generates tests, attempts to dispatch test-execution immediately
-→ not in auto mode: dispatch is blocked, pauses for you to fill test-data.md
+→ attempts to save Platform/Vacantes/vacantes-description.md
+→ docs/ folder exists with requirements.md → write blocked once, no question asked
+→ scans docs/, applies relevant requirements to the in-memory draft, retries → saves
+→ spec-wizard-generate reports back to qa-coordinator (never dispatches another agent itself)
+→ qa-coordinator attempts to dispatch test-generation immediately — this attempt is
+  gated once: not in auto mode → blocked, asks "run the improvement wizard first?"
+→ you reply "no" → dispatch retries, unblocked → test-generation runs
+→ (there is no separate "run the pipeline?" question anywhere in this flow —
+   reaching qa-coordinator at all already commits to running it through to a report)
+→ qa-coordinator attempts to dispatch test-execution immediately
+→ not in auto mode (and no auto-test-data request was made): dispatch is blocked,
+  pauses for you to fill test-data.md
 → you fill test-data.md → confirm
 → test-execution runs and delivers the report
 ```
 
+> A human directly invoking `spec-wizard-generate` (not through qa-coordinator) gets redirected to qa-coordinator automatically by `pipeline-on-spec-dispatch.sh` — there is no way to reach spec-wizard-generate any other way. If you reply "yes" to the improvement-wizard question instead, qa-coordinator dispatches `spec-wizard-improve` (with `CALLER: qa-coordinator`), which reports straight back once you finish the 9-section review — then qa-coordinator continues into test generation exactly as above.
+
 ### Create a spec with design comparison
 
 ```
-Invoke: spec-wizard-generate
+Invoke: qa-coordinator
 "Create a spec for /dashboard, login at /login with email: AUTH_EMAIL, password: AUTH_PASSWORD,
 design reference: https://www.figma.com/design/abc123/MyProject?node-id=1234-5678"
-→ auto-generates spec with Figma frame URL in Screen Identification
+→ Stage 0 bootstrap dispatches spec-wizard-generate, which auto-generates the spec
+  with the Figma frame URL in Screen Identification
 → test generation includes a TC-DC-01 Design Comparison test case
 → test execution retrieves the Figma design and compares against the live page
 → report includes a DESIGN COMPARISON section with discrepancy details
@@ -526,7 +609,7 @@ design reference: https://www.figma.com/design/abc123/MyProject?node-id=1234-567
 ### Create a spec for a page that requires a brand-new account
 
 ```
-Invoke: spec-wizard-generate
+Invoke: qa-coordinator
 "Create a spec for /account/settings, new account at /signup with email: AUTH_EMAIL,
 password: AUTH_PASSWORD, destination /account/settings"
 → AUTH_EMAIL / AUTH_PASSWORD in vars.md are still placeholders
@@ -544,22 +627,41 @@ password: AUTH_PASSWORD, destination /account/settings"
 Invoke: qa-coordinator
 "Run the full QA pipeline for Platform/Login/login-description.md"
 → dispatches test-generation → test-cases.md + test-data.md
-→ attempts to dispatch test-execution immediately — not in auto mode, so it's blocked
+→ attempts to dispatch test-execution immediately — dispatch is blocked
 → pauses: "Fill test-data.md and confirm when ready"
 → you fill test-data.md → confirm
 → dispatches test-execution → test-report-login.md generated
 ```
 
-### Run the same pipeline in Claude Code's auto permission mode (no pauses)
+### Run the same pipeline in Claude Code's auto permission mode
 
 ```
 Invoke: qa-coordinator
 "Run the full QA pipeline for Platform/Login/login-description.md"
-→ dispatches test-generation → test-cases.md + test-data.md
+→ dispatches test-generation → test-cases.md + test-data.md (left blank — no auto-fill requested)
 → attempts to dispatch test-execution immediately
-→ auto mode: both the test-data confirmation gate and the roughness gate are skipped
-→ dispatches test-execution straight away against whatever test-data.md currently holds
-→ EXECUTION_LEVEL defaults to 3 (All) since none was stated
+→ auto mode affects ONLY the roughness gate here, not the test-data gate
+→ test-data confirmation still blocks — even in auto mode — because auto-fill was not requested
+→ pauses: "Fill test-data.md and confirm when ready"
+→ you fill test-data.md → confirm
+→ dispatch retries: roughness gate is skipped (auto mode), EXECUTION_LEVEL defaults to 3 (All)
+→ test-report-login.md generated
+```
+
+### Run the pipeline fully unattended, including test data (auto mode + explicit auto-fill request)
+
+```
+Invoke: qa-coordinator
+"Run the full QA pipeline for Platform/Login/login-description.md, generate the test data automatically"
+→ qa-coordinator parses "generate the test data automatically" as REQUESTED_AUTO_TEST_DATA = true
+→ dispatches test-generation with AUTO_FILL_TEST_DATA: true
+→ test-generation fills every field in test-data.md — real vars.md values for credential
+  fields, plausible inferred values everywhere else (signup fields are still left blank)
+→ attempts to dispatch test-execution with AUTO_TEST_DATA: true
+→ test-data confirmation gate bypasses unconditionally — this is the ONLY thing that skips it,
+  auto mode alone would not have been enough
+→ roughness gate also bypasses since the session is in auto mode → EXECUTION_LEVEL 3 (All)
+→ test-execution runs immediately against the auto-filled data, no pauses at all
 → test-report-login.md generated
 ```
 
