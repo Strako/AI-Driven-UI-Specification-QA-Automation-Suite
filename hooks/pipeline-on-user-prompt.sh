@@ -26,6 +26,15 @@
 # skipped by auto mode alone, only by an explicit auto-fill request made in
 # the initial prompt (see pipeline-on-execution-dispatch.sh and
 # qa-coordinator's AUTO_TEST_DATA handling).
+#
+# This branch requires the prompt to be EXACTLY the word "done" (case-insensitive,
+# surrounding whitespace ignored) — nothing before or after it. It used to match a
+# whole word-list (ready/filled/proceed/go ahead/continue/next/execute/run) as an
+# unanchored substring, which meant any ordinary message that merely contained one
+# of those common words anywhere — including a brand-new, unrelated request typed
+# after a stale GENERATION_COMPLETE state was left over from an earlier/interrupted
+# run — got misread as a genuine confirmation. Requiring an exact, deliberate reply
+# removes that entire class of false positive.
 
 PROJECT="${PWD}"
 STATE_FILE="$PROJECT/.claude/.pipeline-state"
@@ -38,14 +47,13 @@ PATH_LINE=$(sed -n '3p' "$STATE_FILE")
 
 INPUT=$(cat)
 PROMPT=$(echo "$INPUT" | python3 -c \
-  "import sys,json; d=json.load(sys.stdin); print(d.get('prompt','').lower())" \
+  "import sys,json; d=json.load(sys.stdin); print(d.get('prompt','').strip().lower())" \
   2>/dev/null || echo "")
 
 [[ -z "$PROMPT" ]] && exit 0
 
 YES_RE="(^yes$|^ok$|^okay$|^yep$|^sure$|^proceed$|go ahead)"
 NO_RE="(^no$|^nope$|^not now$|^later$|^skip$|^no thanks$)"
-DONE_RE="(test data (ready|done|filled)|ready|done|filled|proceed|go ahead|continue|next|execute|run)"
 
 # Execution roughness level replies — check LEVEL2 before LEVEL1 since both mention "critical"
 LEVEL2_RE="(^2$|critical.*mid|mid.*critical|critical and mid|critical \+ mid)"
@@ -141,7 +149,7 @@ MSG
 elif [[ "$CURRENT_STATE" == "GENERATION_COMPLETE" ]]; then
   MODULE_DIR="$PATH_LINE"
 
-  if echo "$PROMPT" | grep -qiE "$DONE_RE"; then
+  if [[ "$PROMPT" == "done" ]]; then
     printf "TEST_DATA_READY\n%s\n%s\n" "$MODULE" "$MODULE_DIR" > "$STATE_FILE"
 
     SPEC_FILE=$(find "$MODULE_DIR" -maxdepth 1 \( -name "*.spec.md" -o -name "*-description.md" \) 2>/dev/null | head -1)
@@ -169,6 +177,10 @@ Dispatch the **test-execution** agent using the Agent tool with:
 
 MSG
   fi
+  # No match: say nothing — anything other than exactly "done" leaves state at
+  # GENERATION_COMPLETE, so a new unrelated prompt can never be misread as
+  # confirmation. qa-coordinator reminds the user of the required exact reply
+  # on its own next turn.
 
 # ── AWAITING_EXECUTION_LEVEL: user answered the roughness question ────────────
 # pipeline-on-execution-dispatch.sh blocked the first dispatch attempt and set

@@ -204,9 +204,9 @@ The `pipeline-on-execution-dispatch.sh` hook checks, first, whether the user has
   > **Before execution, fill in the test data:**
   > Open `{dir-of-spec}/test-data.md` and replace each `${field-name}` placeholder with a concrete value for every scenario.
   >
-  > Reply here when you have filled in the test data and are ready to continue.
+  > Reply here with exactly the word **done** — nothing else, no other words before or after it — once you've filled it in.
 
-  **Do NOT retry the dispatch until the user explicitly confirms.** Wait for their reply — this holds even if the session is running unattended in auto mode; running test execution against unconfirmed data is exactly what this gate exists to prevent, and the only way around it is stating the automatic-test-data request in the initial message (see Startup, item 5). The `UserPromptSubmit` hook recognizes a confirmation reply (`done`, `ready`, `filled`, `proceed`, `go ahead`, `continue`, `next`, `execute`, `run`) and injects an instruction telling you to retry the dispatch once it sees one.
+  **Do NOT retry the dispatch until the user explicitly confirms.** Wait for their reply — this holds even if the session is running unattended in auto mode; running test execution against unconfirmed data is exactly what this gate exists to prevent, and the only way around it is stating the automatic-test-data request in the initial message (see Startup, item 5). The `UserPromptSubmit` hook only recognizes a reply that is EXACTLY `done` (case-insensitive, surrounding whitespace ignored) — nothing else counts, so an unrelated message that merely happens to contain a similar word will never be misread as confirmation — and injects an instruction telling you to retry the dispatch once it sees that exact reply.
 - Once test data is confirmed (or auto-generation was requested upfront), the same dispatch attempt moves on to the **Execution Roughness Gate** below.
 
 ---

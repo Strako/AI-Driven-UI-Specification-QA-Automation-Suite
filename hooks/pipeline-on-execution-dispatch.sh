@@ -10,8 +10,10 @@
 #
 # Two independent gates run in order:
 #
-#   Gate 1 — Test data confirmation. Blocks until the user has explicitly said
-#   test-data.md is filled in. State is written GENERATION_COMPLETE by
+#   Gate 1 — Test data confirmation. Blocks until the user has replied with
+#   EXACTLY the word "done" (case-insensitive, surrounding whitespace ignored) —
+#   nothing else counts, so a new unrelated prompt can never be misread as
+#   confirmation. State is written GENERATION_COMPLETE by
 #   pipeline-on-tests-generated.sh right after test-cases.md is produced, and
 #   advanced to TEST_DATA_READY by pipeline-on-user-prompt.sh once the user replies.
 #   This gate is intentionally NOT bypassed by "auto" permission mode alone — it
@@ -77,11 +79,13 @@ unless the user's initial request explicitly asked for automatic test data
 generation. Do NOT retry this dispatch yet — first stop and tell the user:
 
   Stage 1 complete — test cases and test-data.md were generated for "$MODULE".
-  Fill in test-data.md, then reply here (e.g. "done") when ready.
+  Fill in test-data.md, then reply with exactly the word "done" (nothing else,
+  no other words before or after it) when ready.
 
-Wait for their reply in the conversation. The UserPromptSubmit hook recognizes
-a confirmation reply (done/ready/filled/proceed/go ahead/continue/next/execute/run)
-and will tell you to retry this dispatch once it sees one.
+Wait for their reply in the conversation. The UserPromptSubmit hook only
+recognizes a reply that is EXACTLY "done" — nothing else counts, including
+messages that merely mention "done" alongside other words — and will tell you
+to retry this dispatch once it sees that exact reply.
 MSG
       exit 2
     fi
