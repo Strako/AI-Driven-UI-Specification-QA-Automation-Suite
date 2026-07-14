@@ -91,6 +91,29 @@ if echo "$PROMPT_TEXT" | grep -qE "PIPELINE_STAGE:[[:space:]]*test-generation"; 
   MODULE_DIR=$(dirname "$SPEC_FILE")
   MODULE=$(basename "$MODULE_DIR")
 
+  # Clear a stale GENERATION_COMPLETE left over from an earlier, never-confirmed
+  # generation run for this same module. Otherwise pipeline-on-test-data-edit-gate.sh
+  # would mistake this fresh test-generation run's own test-data.md write for an
+  # unconfirmed leftover pause and wrongly block it.
+  if [[ -f "$STATE_FILE" ]]; then
+    STALE_STATE=$(sed -n '1p' "$STATE_FILE" 2>/dev/null)
+    STALE_MODULE=$(sed -n '2p' "$STATE_FILE" 2>/dev/null)
+    if [[ "$STALE_STATE" == "GENERATION_COMPLETE" && "$STALE_MODULE" == "$MODULE" ]]; then
+      rm -f "$STATE_FILE"
+    fi
+  fi
+
+  # Record that this module's test data was auto-filled by an explicit upfront
+  # request (AUTO_FILL_TEST_DATA: true, set only when the user's initial message
+  # asked for it — see qa-coordinator's Startup item 5). Per user-guide.md Step
+  # 3.5, this is a documented, sanctioned case where the user is still allowed to
+  # tweak test-data.md further before execution starts, unlike the default
+  # blank-template case pipeline-on-test-data-edit-gate.sh protects. That gate
+  # checks for this marker and skips its block when present.
+  if echo "$PROMPT_TEXT" | grep -qE "AUTO_FILL_TEST_DATA:[[:space:]]*true"; then
+    touch "$PROJECT/.claude/.auto-test-data-${MODULE}"
+  fi
+
   CURRENT_STATE=$(sed -n '1p' "$STATE_FILE" 2>/dev/null)
   STATE_MODULE=$(sed -n '2p' "$STATE_FILE" 2>/dev/null)
 
