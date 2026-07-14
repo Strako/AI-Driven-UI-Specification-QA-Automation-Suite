@@ -98,7 +98,7 @@ Generate a token from: Figma → Settings → Personal access tokens.
 >
 > - The **docs/ enrichment step (Step 1.5)** never asks a question at all, in any mode — it's a pure filesystem check (does `docs/` exist and have readable files?), not a permission-mode decision.
 > - The **improvement-wizard offer** and **execution roughness gate** are both skipped automatically in auto mode, each defaulting to the "keep going" answer (skip the wizard, run all tests).
-> - The **test-data-fill pause** is the one exception: it is **never** skipped by auto mode alone. It only skips if your initial request explicitly asked for automatic test data generation (see **Step 3.5**) — auto mode by itself always still pauses here, because running tests against unconfirmed data is exactly what this gate exists to prevent.
+> - The **test-data-fill pause** is the one exception: it is **never** skipped by auto mode alone. It only skips if your initial request explicitly asked for automatic test data generation (see **Step 3.5**) — auto mode by itself always still pauses here, because running tests against unconfirmed data is exactly what this gate exists to prevent. This protection is enforced at **two** layers: `pipeline-on-execution-dispatch.sh` blocks the dispatch of `test-execution` itself, and a second hook, `pipeline-on-test-data-edit-gate.sh`, independently blocks any direct `Write`/`Edit` of `test-data.md` while it's unconfirmed — so an assistant can't work around the pause by just filling the file in itself and rationalizing "auto mode is on."
 >
 > In practice this means a single **"create a spec for X"** request in auto mode runs unattended through spec creation, enrichment, the wizard offer, and test generation — but still pauses for you to fill `test-data.md` unless you also explicitly asked for automatic test data. Add that to the same request for a fully unattended run end-to-end. The roughness question is also skipped (in either mode) if you already stated a level upfront.
 
@@ -355,6 +355,8 @@ Reply here when you are ready to continue.
 
 **This pause happens regardless of Claude Code's permission mode** — unlike every other pause in this pipeline, auto mode does **not** skip it. The only way to skip it is Step 3.5 below.
 
+This is also the point where a second, independent hook — `pipeline-on-test-data-edit-gate.sh` — starts guarding the file directly: any `Write` or `Edit` of `test-data.md` for this module is blocked until you reply "done," even if the assistant itself attempts it (e.g. by reasoning "auto mode is active, I'll just fill this in"). It's not enough to gate the `test-execution` dispatch alone, since nothing else stops an assistant from editing the file directly instead of waiting for you — this hook closes that gap.
+
 ---
 
 ## Step 3.5 — Automatic Test Data Generation (optional)
@@ -372,6 +374,8 @@ Create a spec for /dashboard and run the full QA pipeline, generate the test dat
 - **Every other field** gets a plausible, obviously-a-test-value based on its name, type, and any validation rules in the spec (e.g. a well-formed email, a number inside a stated range, one of a dropdown's documented options).
 
 With `test-data.md` already filled, `qa-coordinator` includes `AUTO_TEST_DATA: true` on the test-execution dispatch, and the Step 4 pause below is skipped entirely — you go straight to Step 4.5 / Step 5. Always skim the auto-filled `test-data.md` before a real run if the values matter to you; nothing stops you from editing it further before test execution actually starts (the file is already fully written by this point, and the pause is only skipped, not the file's existence — you could interrupt after Stage 1 and edit it if truly needed).
+
+This is a documented exception to `pipeline-on-test-data-edit-gate.sh` (see Step 3 above): when you request auto-fill upfront, `pipeline-on-spec-dispatch.sh` records a per-module marker (`.auto-test-data-{module}`) recognizing that you've explicitly opted out of manual confirmation, so the edit gate lets further edits through instead of blocking them. Without that upfront request, direct edits to `test-data.md` stay blocked until you reply "done."
 
 ---
 
@@ -593,7 +597,7 @@ Invoke: qa-coordinator
 
 - **Execution timestamps** — the `test-execution` agent has no `Bash`/`date` access, so it reads the clock via a Playwright `browser_evaluate` call. Every report includes an `EXECUTION_STARTED` / `EXECUTION_COMPLETED` execution window, and every screenshot filename carries its own capture timestamp.
 
-- **Test data confirmation gate** — a `PreToolUse` hook blocks test-execution from starting until you've explicitly confirmed `test-data.md` is filled in (see Step 3/4). Unlike every other gate in this pipeline, Claude Code's **auto** permission mode does **not** skip this one — it only skips if you explicitly asked for automatic test data generation in your initial request (Step 3.5). Running an unattended session in auto mode without that request still pauses here.
+- **Test data confirmation gate** — a `PreToolUse` hook blocks test-execution from starting until you've explicitly confirmed `test-data.md` is filled in (see Step 3/4). Unlike every other gate in this pipeline, Claude Code's **auto** permission mode does **not** skip this one — it only skips if you explicitly asked for automatic test data generation in your initial request (Step 3.5). Running an unattended session in auto mode without that request still pauses here. A second `PreToolUse` hook, `pipeline-on-test-data-edit-gate.sh`, backs this up at the file level: it blocks any direct `Write`/`Edit` of `test-data.md` while it's unconfirmed, regardless of permission mode, so an assistant can't bypass the pause by editing the file itself instead of waiting for your "done."
 
 - **Execution roughness gate** — if your Claude Code session isn't in **auto** permission mode, the pipeline asks how thorough a run should be (Critical only / Critical + Mid / All) before test-execution starts, using each test case's `Severity`. State the level upfront in your request (e.g. "just the critical tests") to skip the question — this works the same whether or not auto mode is on. In auto mode with no level stated, it defaults to running everything. Anything excluded shows up in the report as `⏭ SKIPPED`, never silently dropped.
 

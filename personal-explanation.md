@@ -111,14 +111,19 @@ flowchart TD
             TG[/"test-generation\nAgent Sonnet"/]
             TG -->|"Reads"| SKILL_TG["test-generation:process\nSKILL.md"]
             TG -->|"Assigns Severity\n(Critical/Mid/Low)"| TC
-            TG -->|"Write"| TC["test-cases.md"]
-            TG -->|"Write"| TD["test-data.md"]
+            TG -->|"Write (Step 4)"| TC["test-cases.md"]
+            TG -->|"Write (Step 5)"| TD["test-data.md"]
         end
     end
 
     TC -->|"PostToolUse Write"| HOOK_TG["pipeline-on-tests-generated.sh"]
-    HOOK_TG -->|"State: GENERATION_COMPLETE"| STATE_FILE
     HOOK_TG -->|"mkdir -p"| EVID_DIR["Platform/{module}/evidences/"]
+    TD -->|"PostToolUse Write"| HOOK_TG
+    HOOK_TG -->|"State: GENERATION_COMPLETE\n(keyed off THIS write, not test-cases.md,\nso test-generation's own write can never\nrace against the edit-gate hook below)"| STATE_FILE
+
+    EDIT_ATTEMPT(["Any Write/Edit attempt\non test-data.md, by anyone"]) -->|"PreToolUse\nWrite or Edit"| HOOK_TDGATE{"pipeline-on-test-data-edit-gate.sh"}
+    HOOK_TDGATE -->|"state != GENERATION_COMPLETE\nfor this module,\nOR .auto-test-data-{module}\nmarker present"| TD
+    HOOK_TDGATE -->|"state == GENERATION_COMPLETE,\nno marker\n(BLOCKED — not mode-dependent,\ncloses the gap left by\nHOOK_GATE below acting only\non the Agent-tool dispatch)"| BLOCK_EDIT(["Blocked (exit 2) — told to wait\nfor the user's 'done' reply instead"])
 
     QAC -->|"Attempts dispatch\nimmediately after Stage 1"| HOOK_GATE{"PreToolUse:\npipeline-on-execution-dispatch.sh"}
     HOOK_GATE -->|"AUTO_TEST_DATA: true present\n(explicit upfront request —\nNOT just auto mode)"| GATE2{"Gate 2 check"}
@@ -168,6 +173,8 @@ flowchart TD
 ```
 
 > **Note on `AUTH_ID` / `GEN_ID` / `PERSIST_ID` / `YOPMAIL`.** These four nodes are drawn once, under `test-execution`, but they are not test-execution-specific logic — they're the shared `skills/shared:account-identity/SKILL.md` procedure (Steps A–E). `spec-wizard-generate` walks through the exact same four nodes in its own Phase 1.1b, triggered when its Auth answer is "new account" instead of by a signup test case reaching PASS/BLOCKED. Both agents read the shared skill file rather than keeping their own copy of the generation formula or the Yopmail steps, so the diagram's `AUTH_ID → GEN_ID → PERSIST_ID` / `YOPMAIL` sub-flow applies unchanged to either caller — only what triggers entry into it, and what "success" means at the end, differs per agent.
+
+> **Note on `HOOK_TDGATE` and the Stage 1 dispatch (`QAC -->|"Dispatch sub-agent"| TG`).** `pipeline-on-test-data-edit-gate.sh` closes a gap that `pipeline-on-execution-dispatch.sh`'s Gate 1 alone couldn't: Gate 1 only fires on the Agent-tool call that dispatches `test-execution`, so nothing previously stopped an assistant from just Read+Editing `test-data.md` directly instead — in particular the top-level orchestrator that regains control once a backgrounded `qa-coordinator` dispatch returns with "paused, waiting for test data" as its final output, and which isn't bound by `qa-coordinator`'s own instructions. `pipeline-on-test-data-edit-gate.sh` fires on `Write`/`Edit` of the file itself, so it blocks that path too, regardless of `permission_mode` — same asymmetry as Gate 1. Two things make this safe against false positives, both added to `pipeline-on-spec-dispatch.sh` at the same time: (1) on every `test-generation` (re)dispatch, it clears a stale `GENERATION_COMPLETE` left over for that module from an earlier, never-confirmed run, so this fresh run's own `test-data.md` write is never mistaken for an unconfirmed leftover pause; (2) when the dispatch prompt carries `AUTO_FILL_TEST_DATA: true` (an explicit upfront request — see Step 3.5 in [user-guide.md](user-guide.md)), it touches a per-module `.claude/.auto-test-data-{module}` marker, which `HOOK_TDGATE` checks and lets through — preserving the documented "tweak the auto-filled data before execution" workflow instead of blocking it.
 
 ---
 
@@ -487,6 +494,31 @@ exit 2
 
 `qa-coordinator` itself never sees `permission_mode` directly — the hook is the only thing that can, and it hands the decision back as plain-English feedback for whichever gate blocked, which the agent then acts on conversationally. Notice the two gates are **deliberately asymmetric**: Gate 1 ignores `permission_mode` entirely (running tests against unconfirmed data is exactly what it exists to prevent, auto session or not), while Gate 2 treats auto mode as "run everything." This is a hard technical gate rather than a prose instruction the coordinator agent could rationalize skipping (e.g. by generalizing "auto mode = don't wait for a human" from Gate 2 to Gate 1, which is precisely the bug this asymmetric design prevents) — it fires on the tool call itself, before the sub-agent ever starts.
 
+### Example from this project — `pipeline-on-test-data-edit-gate.sh` (PreToolUse, blocking `Write` **and** `Edit`)
+
+Gate 1 above has a blind spot: it only fires on the `Agent`-tool call that dispatches `test-execution`. Nothing stops a different actor — concretely, the top-level orchestrator that regains control once a backgrounded `qa-coordinator` dispatch returns "paused, waiting for test data" as its final output, and which isn't bound by `qa-coordinator`'s own instructions — from just Read+Editing `test-data.md` directly, rationalizing "auto mode is active, I'll fill this in myself." That is exactly the incident this hook was added to close, and it's the first hook in this plugin registered on `Edit` at all (see `hooks/hooks.json`):
+
+```bash
+[[ "$TOOL_NAME" != "Write" && "$TOOL_NAME" != "Edit" ]] && exit 0
+[[ "$(basename "$FILE")" != "test-data.md" ]] && exit 0
+
+# Documented exception: an explicit upfront AUTO_FILL_TEST_DATA: true request
+# (Step 3.5) records this marker so further hand-edits stay allowed afterward.
+[[ -f "$PROJECT/.claude/.auto-test-data-${MODULE}" ]] && exit 0
+
+if [[ "$CURRENT_STATE" == "GENERATION_COMPLETE" && "$STATE_MODULE" == "$MODULE" ]]; then
+  echo "Test data not confirmed yet — do not edit test-data.md yourself. Ask the user to fill it in and reply 'done'." >&2
+  exit 2  # blocks regardless of permission_mode — never bypassed by auto mode
+fi
+```
+
+Two details make this safe to add without breaking the legitimate write test-generation itself performs, or a stale state left behind by an earlier unfinished run:
+
+- **No race against `test-generation`'s own write.** `pipeline-on-tests-generated.sh` (a `PostToolUse` hook) only flips state to `GENERATION_COMPLETE` on the *test-data.md* write — the second of the two files `test-generation` produces — not on `test-cases.md`. Since this gate is `PreToolUse`, by the time it ever sees a `test-data.md` write attempt with state already `GENERATION_COMPLETE`, that write cannot be `test-generation`'s own (its write already happened and is what set the state); it must be a later, separate edit attempt.
+- **No false block from a stale previous run.** `pipeline-on-spec-dispatch.sh` clears any leftover `GENERATION_COMPLETE` for the same module on every fresh `test-generation` (re)dispatch, so a never-confirmed pause from an earlier run can't be mistaken for blocking this run's own write.
+
+Like Gate 1, this hook is deliberately **not** keyed on `permission_mode` at all — the entire point is to prevent the "auto mode is on, so I'll just do it myself" reasoning, which is a property of the assistant's behavior, not of whether a human happens to be watching.
+
 ---
 
 ## 4. How They Work Together — Agent + Skill + Hook
@@ -655,6 +687,19 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │   └── Auto mode → lets the Stage 1 dispatch through immediately,
        │       no question ever asked
        │
+       ├── [HOOK fires] pipeline-on-spec-dispatch.sh, on every test-generation
+       │   (re)dispatch attempt for this module (independent of the
+       │   wizard-offer gate above, which only fires on a fresh bootstrap):
+       │   ├── Clears a stale GENERATION_COMPLETE left in .pipeline-state from
+       │   │   an earlier, never-confirmed generation run for this same module
+       │   │   — otherwise pipeline-on-test-data-edit-gate.sh could mistake
+       │   │   this fresh run's own test-data.md write for an unconfirmed
+       │   │   leftover pause
+       │   └── If the dispatch prompt carries AUTO_FILL_TEST_DATA: true
+       │       (explicit upfront request, parsed by qa-coordinator at
+       │       Startup) → touches .claude/.auto-test-data-{module}, the
+       │       marker pipeline-on-test-data-edit-gate.sh checks later
+       │
        ├── [AGENT dispatches] test-generation (sub-agent)
        │   │   ├── [SKILL] Reads ${CLAUDE_PLUGIN_ROOT}/skills/test-generation:process/SKILL.md
        │   │   ├── [AGENT] Reads spec (never vars.md), generates test cases
@@ -663,12 +708,30 @@ Here is exactly what happens when a user says "Create a spec for /dashboard":
        │   │   ├── [AGENT] Assigns Severity (Critical/Mid/Low) to every test case
        │   │   ├── [AGENT] Write → test-cases.md
        │   │   │   └── [HOOK fires] pipeline-on-tests-generated.sh
-       │   │   │       ├── State → GENERATION_COMPLETE
        │   │   │       └── mkdir -p Platform/{module}/evidences/
        │   │   │           (test-execution has no Bash/mkdir access, so this
        │   │   │            hook creates the folder up front, deterministically)
        │   │   └── [AGENT] Write → test-data.md
+       │   │       ├── [HOOK fires] pipeline-on-tests-generated.sh (again)
+       │   │       │   └── State → GENERATION_COMPLETE
+       │   │       │       (keyed off THIS write, the second of the two files
+       │   │       │        test-generation produces, not test-cases.md — so
+       │   │       │        this legitimate write can never itself be blocked
+       │   │       │        by pipeline-on-test-data-edit-gate.sh below, which
+       │   │       │        only sees a Write/Edit attempt once this state is
+       │   │       │        already set)
        │   │       └── Reports SEVERITY_BREAKDOWN (Critical/Mid/Low counts) in its summary
+       │   │
+       │   ├── [ANY subsequent Write/Edit of test-data.md, by any actor]
+       │   │   └── [HOOK fires] pipeline-on-test-data-edit-gate.sh (PreToolUse: Write, Edit)
+       │   │       ├── .claude/.auto-test-data-{module} marker present (user
+       │   │       │   requested AUTO_FILL_TEST_DATA upfront — Step 3.5) → exit 0,
+       │   │       │   further edits allowed (documented exception)
+       │   │       └── marker absent, state = GENERATION_COMPLETE for this module
+       │   │           → exit 2 (BLOCKED) — even in auto mode; closes the gap
+       │   │             where an assistant (not just qa-coordinator) could
+       │   │             Read+Edit the file directly instead of waiting for
+       │   │             the user's "done"
        │   │
        │   ├── [AGENT attempts dispatch immediately] test-execution (sub-agent)
        │   │   └── [HOOK fires] pipeline-on-execution-dispatch.sh (PreToolUse)
@@ -792,13 +855,13 @@ stateDiagram-v2
         SPEC_AUTO_GENERATED (i.e. bootstrapped in THIS run); a pipeline
         run against a pre-existing spec skips straight past it.
     end note
-    WIZARD_GATE_ATTEMPTED --> GENERATION_COMPLETE : not freshly bootstrapped, OR already resolved, OR auto mode — dispatch allowed, test-generation writes test-cases.md
+    WIZARD_GATE_ATTEMPTED --> GENERATION_COMPLETE : not freshly bootstrapped, OR already resolved, OR auto mode — dispatch allowed, test-generation writes test-cases.md then test-data.md
     WIZARD_GATE_ATTEMPTED --> WIZARD_OFFER_PENDING : freshly bootstrapped, not auto mode, not yet answered — dispatch blocked (exit 2), qa-coordinator asks "run improvement wizard first? yes/no"
     WIZARD_OFFER_PENDING --> WIZARD_REQUESTED : user says "yes" — qa-coordinator dispatches spec-wizard-improve (CALLER: qa-coordinator), NOT a retry of the blocked dispatch
     WIZARD_OFFER_PENDING --> WIZARD_OFFER_ANSWERED : user says "no" — retry the same Stage 1 dispatch, now unblocked
-    WIZARD_OFFER_ANSWERED --> GENERATION_COMPLETE : retried dispatch succeeds, test-generation writes test-cases.md
+    WIZARD_OFFER_ANSWERED --> GENERATION_COMPLETE : retried dispatch succeeds, test-generation writes test-cases.md then test-data.md
     WIZARD_REQUESTED --> WIZARD_COMPLETE : spec-wizard-improve saves spec (Write gate bypassed — file already exists)
-    WIZARD_COMPLETE --> GENERATION_COMPLETE : spec-wizard-improve reports back to qa-coordinator directly (CALLER present skips spec-wizard-pipeline entirely); qa-coordinator retries Stage 1, test-generation writes test-cases.md
+    WIZARD_COMPLETE --> GENERATION_COMPLETE : spec-wizard-improve reports back to qa-coordinator directly (CALLER present skips spec-wizard-pipeline entirely); qa-coordinator retries Stage 1, test-generation writes test-cases.md then test-data.md
 
     note right of WIZARD_COMPLETE
         There is no "run the full QA pipeline?" question anywhere in this
@@ -807,6 +870,18 @@ stateDiagram-v2
         whether to pause once for the wizard.
     end note
 
+    note right of GENERATION_COMPLETE
+        pipeline-on-tests-generated.sh sets this state on the test-data.md
+        write specifically (the second of the two files test-generation
+        produces), not on test-cases.md — so this same write can never be
+        blocked by pipeline-on-test-data-edit-gate.sh below. Also entering
+        this dispatch: pipeline-on-spec-dispatch.sh clears any stale
+        GENERATION_COMPLETE left for this module by an earlier,
+        never-confirmed run, and records a per-module
+        .auto-test-data-{module} marker if AUTO_FILL_TEST_DATA: true was
+        requested upfront (Step 3.5).
+    end note
+    GENERATION_COMPLETE --> GENERATION_COMPLETE : any Write/Edit of test-data.md while state is GENERATION_COMPLETE and no .auto-test-data-{module} marker — pipeline-on-test-data-edit-gate.sh (PreToolUse:Write,Edit) blocks (exit 2), regardless of permission_mode; state unchanged
     GENERATION_COMPLETE --> EXECUTION_DISPATCH_ATTEMPTED : qa-coordinator attempts Agent-tool dispatch immediately
     note right of EXECUTION_DISPATCH_ATTEMPTED
         pipeline-on-execution-dispatch.sh (PreToolUse) checks Gate 1 (test
@@ -814,6 +889,8 @@ stateDiagram-v2
         Gate 2 (EXECUTION_LEVEL, which DOES read permission_mode), in that
         order. Not a .pipeline-state entry — it's the moment the dispatch
         is attempted, and it can recur many times as each gate is satisfied.
+        This gates the Agent-tool dispatch only; pipeline-on-test-data-edit-gate.sh
+        above is what gates a direct file edit instead.
     end note
     EXECUTION_DISPATCH_ATTEMPTED --> GATE2_CHECK : AUTO_TEST_DATA: true present on the dispatch (explicit upfront request) — Gate 1 satisfied regardless of permission_mode
     EXECUTION_DISPATCH_ATTEMPTED --> GENERATION_COMPLETE : no AUTO_TEST_DATA marker, test data not yet confirmed — dispatch blocked (exit 2), state unchanged — even in auto mode
@@ -832,6 +909,7 @@ stateDiagram-v2
 3. **Hooks INJECT** — in certain states, they write to stdout, which Claude Code injects into the agent's context as additional instructions
 4. **Agents don't know about hooks** — agents follow their skills; hooks coordinate transitions invisibly between them
 5. **Agents never decide to ask-and-wait on their own** — at every hand-off, the dispatching agent always *attempts* the next Write/dispatch immediately; only a hook (which alone can see `permission_mode`) decides whether that attempt is allowed through silently or blocked so a human gets asked first. This is what makes "skip this question in auto mode" a mechanical guarantee instead of something the model has to correctly infer from its own prompt.
+6. **Gating the dispatch isn't always enough** — `pipeline-on-execution-dispatch.sh`'s Gate 1 only covers the `Agent`-tool call that dispatches `test-execution`. `pipeline-on-test-data-edit-gate.sh` exists because that left a second path open: a direct `Write`/`Edit` of `test-data.md` itself, by an assistant that isn't the one being gated on dispatch. Where a single gate can be worked around, this pipeline adds a second one at the layer the workaround actually happens on, rather than trusting instructions alone to hold at every layer.
 
 **Why use hooks instead of having the agent remember:**
 
