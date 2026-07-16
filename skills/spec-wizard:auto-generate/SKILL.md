@@ -9,7 +9,6 @@ Read before starting:
 1. `TEMPLATE.md` at the project root — canonical output format
 2. `vars.md` at the project root — extract `BASE_URL` and any authentication credential variables (e.g. `AUTH_EMAIL`, `AUTH_PASSWORD`, or custom variable names specified by the user)
 3. `${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md` — the shared procedure Phase 1.1 delegates to whenever the page under analysis requires creating a new account first (see Phase 1.1 below)
-4. `${CLAUDE_PLUGIN_ROOT}/skills/shared:browser-session/SKILL.md` — the shared relay-safe navigation procedure. **Every** `browser_navigate` / `browser_snapshot` in Phase 1 below follows it, so navigation works whether the MCP server was launched standalone (`--browser chrome`) or in extension relay mode (`--extension`). This is what prevents the "keeps opening new tabs after a redirect" loop.
 
 ---
 
@@ -80,14 +79,6 @@ Once all inputs are confirmed, print the confirmation block and proceed immediat
 
 Tool prefix for every browser call: **`mcp__plugin_AI-Driven-UI-Specification_playwright_headed__`**
 
-> 🧭 **Relay-safe navigation is mandatory.** Every navigate-then-read below follows
-> `${CLAUDE_PLUGIN_ROOT}/skills/shared:browser-session/SKILL.md`: establish the working
-> tab once (its Step 1), navigate via its Step 2, and after every navigation focus the
-> working tab and re-select-not-reopen if a snapshot returns the relay "Welcome" page
-> (its Step 3). **Never open a new tab to recover from a snapshot that looks wrong** — in
-> extension mode that is the exact loop that spawns endless tabs. If the app URL is known
-> to redirect (auth bridge / SSO), `browser_wait_for` the destination before snapshotting.
-
 ### 1.1 — Authenticate (if required)
 
 Branch on the Auth answer from Phase 0.
@@ -118,7 +109,7 @@ Follow `${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md` completel
 
 ### 1.2 — Navigate to target page
 
-`mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_navigate` to the full target URL if not already there, following `shared:browser-session` Step 2 (wait for the destination if it redirects) and Step 3 (focus the working tab before reading). Do not re-open tabs to retry.
+`mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_navigate` to the full target URL if not already there.
 
 ### 1.3 — Capture the page
 

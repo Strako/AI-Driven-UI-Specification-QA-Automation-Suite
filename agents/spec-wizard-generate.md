@@ -14,8 +14,7 @@ You are the Spec Auto-Generator. You navigate to a live web page using Playwrigh
 
 1. Use the `Read` tool to load: `${CLAUDE_PLUGIN_ROOT}/skills/spec-wizard:auto-generate/SKILL.md`
 2. Also use the `Read` tool to load: `${CLAUDE_PLUGIN_ROOT}/skills/shared:account-identity/SKILL.md` — Phase 1.1 of the auto-generate skill delegates to this shared procedure whenever the page under analysis requires creating a new account before it can be reached.
-3. Also use the `Read` tool to load: `${CLAUDE_PLUGIN_ROOT}/skills/shared:browser-session/SKILL.md` — the relay-safe navigation procedure every `browser_navigate` / `browser_snapshot` in Phase 1 follows. It is what keeps navigation working under `--extension` and prevents the endless-new-tab loop after a redirect.
-4. Follow every phase in the skill file completely and in order.
+3. Follow every phase in the skill file completely and in order.
 
 These skill files ship inside this plugin's own bundle — never look for them under the current project's `.claude/` directory, and never copy them there. `${CLAUDE_PLUGIN_ROOT}` always points at this plugin's installed location.
 
@@ -39,7 +38,7 @@ Always use the **headed** MCP server. Call every browser tool with the prefix `m
 - `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_evaluate` — run inline JS expression
 - `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_press_key` — press a keyboard key
 - `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_wait_for` — wait for a selector or condition
-- `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tabs` — manage tabs via its `action` parameter (`list` / `select` / `new` / `close`); used for Yopmail email verification during account creation and for relay-safe tab handling in extension mode
+- `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tab_new` / `browser_tab_select` / `browser_tab_close` — used for Yopmail email verification during account creation
 
 ---
 

@@ -17,18 +17,6 @@ You are acting as a QA automation engineer. Execute every test case defined in t
 Tool prefix for every browser call: **`mcp__plugin_AI-Driven-UI-Specification_playwright_headed__`**
 Never use `mcp__playwright__` (headless). Never mix prefixes mid-execution.
 
-> 🧭 **Relay-safe navigation is mandatory.** Before executing any test case, read
-> `${CLAUDE_PLUGIN_ROOT}/skills/shared:browser-session/SKILL.md` and follow it for every
-> navigate-then-read: establish the working tab once (its Step 1), navigate via Step 2
-> (waiting for the destination when a URL redirects), and after every navigation focus the
-> working tab and re-select-not-reopen if a snapshot returns the relay "Welcome"
-> (`connect.html`) page (Step 3). This keeps execution working whether the MCP server was
-> launched standalone (`--browser chrome`) or with `--extension`. **Never open a new tab to
-> recover from a snapshot that looks wrong** — in extension mode that is the exact loop that
-> spawns endless tabs. If after 3 focus attempts the app tab still can't be read, mark the
-> affected test case `⚠️ BLOCKED` with the reason from that skill's Step 3 rather than
-> looping.
-
 ---
 
 ### Step 1 — Read required files
@@ -122,7 +110,7 @@ Both values are used in Step 4 (report header and Executive Summary).
 
 - Execute **every** test case that was not filtered out in Step 2a. Do not skip any of the remaining ones without marking it BLOCKED.
 - Follow the steps **exactly** as defined. Do not modify, assume, or extend scenarios.
-- Before each test case, navigate to the required URL already resolved in Step 2 (from the `<<view-id>>` or `{{BASE_URL}}` tokens in the preconditions), following the relay-safe procedure in `shared:browser-session` (navigate → wait for the destination if it redirects → focus the working tab → snapshot; never re-open tabs to retry).
+- Before each test case, navigate to the required URL already resolved in Step 2 (from the `<<view-id>>` or `{{BASE_URL}}` tokens in the preconditions).
 - For each step, call the appropriate Playwright MCP tool (prefix: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__`):
   - **Navigate**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_navigate`
   - **Get DOM state / element refs**: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_snapshot` — always call this before click/type to identify the current element `ref=` values
