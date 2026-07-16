@@ -72,7 +72,7 @@ The email to check is the one generated in Step B (or, if the caller is
 verifying something other than the identity itself, whichever email value the
 caller's own flow used earlier).
 
-1. **Do not navigate away from the tab running the target flow.** Open a second tab: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tab_new`.
+1. **Do not navigate away from the tab running the target flow.** Open a second tab: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tabs` with `action: "new"`. In extension relay mode, follow `${CLAUDE_PLUGIN_ROOT}/skills/shared:browser-session/SKILL.md` Step 4 — track tabs by URL, not absolute index (the relay control tab occupies one), and ignore the relay "Welcome" (`connect.html`) tab entirely.
 2. In the new tab, navigate to `https://yopmail.com/en/`.
 3. Snapshot, then type the local-part of the target email (the part before `@yopmail.com`) into Yopmail's inbox field and open the inbox.
 4. Snapshot again and confirm the inbox header shows the exact expected address.
@@ -81,9 +81,9 @@ caller's own flow used earlier).
 5. Open the newest message addressed from the app under test. Either:
    - **Code/OTP**: read the code from the message body via snapshot, or
    - **Confirmation link**: click the link directly inside Yopmail's inline message preview — this triggers server-side confirmation regardless of which tab clicks it.
-6. Switch back to the original tab: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tab_select`.
+6. Switch back to the original tab: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tabs` with `action: "select"`, choosing it by matching its URL (not a fixed index), then snapshot to confirm you are on it before continuing.
 7. Continue the caller's flow: type the code into the app's input and submit, or — if a link was clicked — proceed per the expected behavior (e.g. reload/navigate, since confirmation already completed server-side).
-8. Close the Yopmail tab: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tab_close`, before continuing.
+8. Close the Yopmail tab: `mcp__plugin_AI-Driven-UI-Specification_playwright_headed__browser_tabs` with `action: "close"` on the Yopmail tab (matched by URL) before continuing — never close the relay control tab.
 
 ---
 
